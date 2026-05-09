@@ -8,6 +8,8 @@ const PLAYWRIGHT_BRIDGE_STORE_URL =
 	"https://chromewebstore.google.com/detail/playwright-mcp-bridge/mmlmfjhmonkocbjadbfplnigmagldckm";
 const NODEJS_DOWNLOAD_URL = "https://nodejs.org/en/download";
 
+export type PublishMode = "api" | "menu";
+
 export interface XArticlePreviewSettings {
 	locale: LocaleSetting;
 	playwrightToken: string;
@@ -19,6 +21,7 @@ export interface XArticlePreviewSettings {
 	showDraftNotice: boolean;
 	showWelcomeGuide: boolean;
 	hasSeenWelcomeGuide: boolean;
+	publishMode: PublishMode;
 }
 
 export const DEFAULT_SETTINGS: XArticlePreviewSettings = {
@@ -32,6 +35,7 @@ export const DEFAULT_SETTINGS: XArticlePreviewSettings = {
 	showDraftNotice: true,
 	showWelcomeGuide: true,
 	hasSeenWelcomeGuide: false,
+	publishMode: "api",
 };
 
 export class XArticleSettingTab extends PluginSettingTab {
@@ -130,6 +134,20 @@ export class XArticleSettingTab extends PluginSettingTab {
 				button
 					.setButtonText(this.plugin.t("settings.nodejs.link"))
 					.onClick(() => window.open(NODEJS_DOWNLOAD_URL, "_blank", "noopener,noreferrer")),
+			);
+
+		new Setting(containerEl)
+			.setName(this.plugin.t("settings.publishMode.name"))
+			.setDesc(this.plugin.t("settings.publishMode.desc"))
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("api", this.plugin.t("settings.publishMode.api"))
+					.addOption("menu", this.plugin.t("settings.publishMode.menu"))
+					.setValue(this.plugin.settings.publishMode)
+					.onChange((value) => {
+						this.plugin.settings.publishMode = value === "menu" ? "menu" : "api";
+						void this.plugin.saveSettings();
+					}),
 			);
 
 		new Setting(containerEl)

@@ -8,6 +8,11 @@ export type TranslationKey =
 	| "command.copyPublishScript"
 	| "command.publishViaMcp"
 	| "command.publishViaApiMcp"
+	| "command.publishWithDefaultMode"
+	| "settings.publishMode.name"
+	| "settings.publishMode.desc"
+	| "settings.publishMode.api"
+	| "settings.publishMode.menu"
 	| "command.openGuide"
 	| "view.title"
 	| "view.heroBadge"
@@ -105,6 +110,12 @@ const translations: Translations = {
 		"command.copyPublishScript": "Copy X draft upload script",
 		"command.publishViaMcp": "Upload article to draft through browser",
 		"command.publishViaApiMcp": "Upload article to draft via API (faster, less brittle)",
+		"command.publishWithDefaultMode": "Upload article to draft (use default mode)",
+		"settings.publishMode.name": "Default publish mode",
+		"settings.publishMode.desc":
+			"Which path the ribbon button and the 'Upload article (default mode)' command use. Both standalone commands always remain available.",
+		"settings.publishMode.api": "API (recommended) — direct GraphQL, fastest, no menu clicks",
+		"settings.publishMode.menu": "Menu (legacy) — paste + Insert menu + autosave",
 		"command.openGuide": "Open quick start guide",
 		"view.title": "X article preview",
 		"view.heroBadge": "Preview",
@@ -204,6 +215,12 @@ const translations: Translations = {
 		"command.copyPublishScript": "复制 X 草稿上传脚本",
 		"command.publishViaMcp": "通过浏览器上传到草稿箱",
 		"command.publishViaApiMcp": "通过 API 上传到草稿箱（更快更稳）",
+		"command.publishWithDefaultMode": "上传到草稿箱（按默认模式）",
+		"settings.publishMode.name": "默认上传模式",
+		"settings.publishMode.desc":
+			"侧栏按钮和「上传到草稿箱（按默认模式）」命令使用哪条路径。另外两个独立命令始终可用。",
+		"settings.publishMode.api": "API（推荐）— 直接 GraphQL，最快，不点菜单",
+		"settings.publishMode.menu": "菜单（旧）— 粘贴 + 插入菜单 + autosave",
 		"command.openGuide": "打开快速使用指南",
 		"view.title": "X 文章预览",
 		"view.heroBadge": "预览",

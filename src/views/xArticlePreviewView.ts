@@ -221,8 +221,17 @@ export class XArticlePreviewView extends ItemView {
 				new Notice(this.plugin.t("error.openMarkdownFirst"));
 				return;
 			}
-			const { publishViaDetectedMcp } = await import("../commands/publishViaMcp");
-			await publishViaDetectedMcp(this.plugin, context);
+			// Use the user's configured default mode (api / menu). The two
+			// stand-alone command-palette commands still let them pick
+			// explicitly per-invocation.
+			const mode = this.plugin.settings.publishMode ?? "api";
+			if (mode === "menu") {
+				const { publishViaDetectedMcp } = await import("../commands/publishViaMcp");
+				await publishViaDetectedMcp(this.plugin, context);
+			} else {
+				const { publishViaApiMcp } = await import("../commands/publishViaApiMcp");
+				await publishViaApiMcp(this.plugin);
+			}
 		} finally {
 			this.isPublishing = false;
 			this.syncActionButtons();

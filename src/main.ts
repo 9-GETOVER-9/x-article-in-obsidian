@@ -3,6 +3,7 @@ import {
 	COPY_PUBLISH_SCRIPT_COMMAND_ID,
 	OPEN_GUIDE_COMMAND_ID,
 	OPEN_PREVIEW_COMMAND_ID,
+	PUBLISH_DEFAULT_COMMAND_ID,
 	PUBLISH_VIA_API_MCP_COMMAND_ID,
 	PUBLISH_VIA_MCP_COMMAND_ID,
 	REFRESH_PREVIEW_COMMAND_ID,
@@ -81,6 +82,14 @@ export default class XArticleInObsidianPlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: PUBLISH_DEFAULT_COMMAND_ID,
+			name: this.t("command.publishWithDefaultMode"),
+			callback: () => {
+				void this.publishWithDefaultMode();
+			},
+		});
+
+		this.addCommand({
 			id: OPEN_GUIDE_COMMAND_ID,
 			name: this.t("command.openGuide"),
 			callback: () => {
@@ -104,6 +113,17 @@ export default class XArticleInObsidianPlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+	}
+
+	async publishWithDefaultMode(): Promise<void> {
+		const mode = this.settings.publishMode ?? "api";
+		if (mode === "menu") {
+			const { publishViaDetectedMcp } = await import("./commands/publishViaMcp");
+			await publishViaDetectedMcp(this);
+		} else {
+			const { publishViaApiMcp } = await import("./commands/publishViaApiMcp");
+			await publishViaApiMcp(this);
+		}
 	}
 
 	openWelcomeGuide(): void {
