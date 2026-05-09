@@ -385,13 +385,87 @@ export function getBrowserPublishFunctionTemplate(payload: PublishPayload): stri
     }
   }
 
+  // Reach into Draft.js via React fiber to delete marker-only blocks
+  // directly from EditorState. This is the only path that survives
+  // X's autosave — DOM-only mutations (textContent / execCommand /
+  // synthesized beforeinput) are silently overwritten by autosave
+  // because the server stores the EditorState, not the rendered DOM.
+  //
+  // Returns the count of blocks actually removed, or null if the
+  // fiber path was unavailable (caller should fall back).
+  function removeMarkerBlocksViaFiber() {
+    const editor = findEditor();
+    if (!editor) return null;
+    const fiberKey = Object.keys(editor).find(
+      (k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$")
+    );
+    if (!fiberKey) return null;
+
+    let fiber = editor[fiberKey];
+    let stateNode = null;
+    let depth = 0;
+    while (fiber && depth < 60) {
+      const sn = fiber.stateNode;
+      if (sn?.props?.editorState && typeof sn.props.onChange === "function") {
+        stateNode = sn;
+        break;
+      }
+      fiber = fiber.return;
+      depth += 1;
+    }
+    if (!stateNode) return null;
+
+    try {
+      const editorState = stateNode.props.editorState;
+      const onChange = stateNode.props.onChange;
+      const EditorStateCtor = editorState.constructor;
+      const SelectionStateCtor = editorState.getSelection().constructor;
+      const contentState = editorState.getCurrentContent();
+      const blockMap = contentState.getBlockMap();
+      const markerLine = /^\\s*MPH_MARKER_\\d+\\s*$/;
+
+      // Drop blocks whose entire text is just a marker (the v1 mdToHtml
+      // wraps each marker in its own <p>MPH_MARKER_N</p> so this is
+      // exactly the shape we get from the publish flow).
+      const newBlockMap = blockMap.filter((b) => {
+        if (b.getType() === "atomic") return true; // never drop atomics
+        return !markerLine.test(b.getText() || "");
+      });
+      const removed = blockMap.size - newBlockMap.size;
+      if (removed === 0) return 0;
+
+      // Make sure selectionBefore / selectionAfter reference a block that
+      // still exists; otherwise X's onChange handler crashes in
+      // _getPlaintextFromCurrentBlock.
+      const survivor = newBlockMap.first();
+      const safeSel = survivor
+        ? SelectionStateCtor.createEmpty(survivor.getKey())
+        : editorState.getSelection();
+      const newContent = contentState
+        .set("blockMap", newBlockMap)
+        .set("selectionBefore", safeSel)
+        .set("selectionAfter", safeSel);
+
+      let newState = EditorStateCtor.push(editorState, newContent, "remove-range");
+      newState = EditorStateCtor.moveSelectionToEnd(newState);
+      onChange(newState);
+      return removed;
+    } catch (e) {
+      console.warn("removeMarkerBlocksViaFiber failed:", e?.message || e);
+      return null;
+    }
+  }
+
   function removeResidualMarkers() {
+    // Preferred path: nuke marker-only blocks via Draft EditorState so
+    // X's autosave persists the cleaned-up version on the server.
+    const fiberRemoved = removeMarkerBlocksViaFiber();
+
+    // Fallback path: DOM-side cleanup. Only kicks in when the fiber path
+    // was unreachable (different React internals shape, etc.). DOM-only
+    // changes will *not* survive a reload, so this is best-effort.
     const editor = findEditor();
     if (!editor) return;
-
-    // Iteratively delete each remaining MPH_MARKER_N via Draft's command
-    // pipeline so EditorState stays in sync. Bounded loop to avoid infinite
-    // loops if a marker becomes undeletable for some reason.
     const markerScan = /MPH_MARKER_\\d+/;
     const touchedBlocks = new Set();
     for (let guard = 0; guard < 200; guard += 1) {
@@ -403,15 +477,16 @@ export function getBrowserPublishFunctionTemplate(payload: PublishPayload): stri
       if (info) touchedBlocks.add(info.block);
       const removed = deleteMarkerViaEditor(marker);
       if (!removed) {
-        // Fallback: textContent mutation — last resort.
         const found = findAnchorToken(marker);
         if (!found) break;
         deleteMarkerFromTextNode(found.node, marker, found.offset);
         touchedBlocks.add(found.node.parentElement?.closest("[data-block='true']"));
       }
     }
-
     touchedBlocks.forEach((block) => removeEmptyBlock(block));
+    if (fiberRemoved && fiberRemoved > 0) {
+      console.log("removed", fiberRemoved, "marker block(s) via Draft fiber");
+    }
   }
 
   function setCaretAfterToken(token) {
@@ -541,6 +616,103 @@ export function getBrowserPublishFunctionTemplate(payload: PublishPayload): stri
     return null;
   }
 
+  // ── Draft.js fiber injection helpers ─────────────────────────────────────
+  // The Insert menu in X's article editor is timing-sensitive and X
+  // periodically renames/reorders its options. For atomic blocks that
+  // don't need a real upload (DIVIDER, MARKDOWN, TWEET) it is far more
+  // reliable to bypass the menu entirely and inject the entity straight
+  // into Draft's EditorState via React fiber. This also means autosave
+  // persists the result correctly without any DOM-side cleanup dance.
+
+  function getDraftStateNode() {
+    const editor = findEditor();
+    if (!editor) return null;
+    const fiberKey = Object.keys(editor).find(
+      (k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$")
+    );
+    if (!fiberKey) return null;
+    let fiber = editor[fiberKey];
+    let depth = 0;
+    while (fiber && depth < 60) {
+      const sn = fiber.stateNode;
+      if (sn?.props?.editorState && typeof sn.props.onChange === "function") return sn;
+      fiber = fiber.return;
+      depth += 1;
+    }
+    return null;
+  }
+
+  // Replace the marker-only block (the <p>MPH_MARKER_N</p> placeholder
+  // pasted in by the v1 mdToHtml pipeline) with a fresh atomic block
+  // referencing a newly-registered entity. Returns true on success.
+  function insertAtomicAtMarker(marker, entityType, entityData, mutability) {
+    const sn = getDraftStateNode();
+    if (!sn) return false;
+
+    try {
+      const editorState = sn.props.editorState;
+      const onChange = sn.props.onChange;
+      const EditorStateCtor = editorState.constructor;
+      const SelectionStateCtor = editorState.getSelection().constructor;
+      const cs0 = editorState.getCurrentContent();
+      const blockMap = cs0.getBlockMap();
+
+      // Find marker block (entire text is just the marker)
+      let targetKey = null;
+      blockMap.forEach((b, key) => {
+        if (b.getType() === "atomic") return;
+        if ((b.getText() || "").trim() === marker) {
+          targetKey = key;
+          return false; // stop iteration
+        }
+      });
+      if (!targetKey) return false;
+      const target = blockMap.get(targetKey);
+
+      // Need a sample atomic block to clone — Draft's atomic shape
+      // (text=' ', characterList[0].entity=key) is fragile to construct
+      // from scratch. If no atomic exists yet, fall through.
+      const sampleAtomic = blockMap.find((b) => b.getType() === "atomic");
+      const charList = sampleAtomic
+        ? sampleAtomic.getCharacterList()
+        : target.getCharacterList();
+      const charSample = charList.get(0);
+      if (!charSample?.set) return false;
+      const ListCtor = charList.constructor;
+
+      // Register entity. createEntity returns a NEW ContentState that
+      // tracks the new entity in its entityMap.
+      const cs1 = cs0.createEntity(entityType, mutability, entityData);
+      const entityKey = cs1.getLastCreatedEntityKey();
+
+      // Build the atomic block with one character carrying the entity ref.
+      const newChar = charSample.set("entity", entityKey);
+      const newCharList = ListCtor([newChar]);
+      const newBlock = (sampleAtomic || target).merge({
+        key: target.getKey(), // reuse marker block's key so selection stays valid
+        type: "atomic",
+        text: " ",
+        characterList: newCharList,
+      });
+
+      // Replace the marker block in the blockMap with the new atomic.
+      const newBlockMap = blockMap.set(target.getKey(), newBlock);
+      const safeSel = SelectionStateCtor.createEmpty(target.getKey());
+      const newContent = cs1
+        .set("blockMap", newBlockMap)
+        .set("selectionBefore", safeSel)
+        .set("selectionAfter", safeSel);
+
+      let newState = EditorStateCtor.push(editorState, newContent, "insert-fragment");
+      newState = EditorStateCtor.moveSelectionToEnd(newState);
+      onChange(newState);
+      return true;
+    } catch (e) {
+      console.warn("insertAtomicAtMarker failed for", marker, ":", e?.message || e);
+      return false;
+    }
+  }
+
   async function openInsertMenu(optionLabels, anchorInfo) {
     if (anchorInfo?.token) {
       await clickAnchorToken(anchorInfo.token);
@@ -606,6 +778,16 @@ export function getBrowserPublishFunctionTemplate(payload: PublishPayload): stri
   }
 
   async function insertCodeBlock(item, anchorInfo) {
+    // Fast path: inject MARKDOWN atomic via React fiber. X stores code
+    // blocks as a MARKDOWN entity whose data.markdown is the raw fenced
+    // code string, so we can build it directly without opening the
+    // Insert > 代码 dialog and filling language + body fields.
+    const md = "\`\`\`" + (item.language || "") + "\\n" + (item.code || "") + "\\n\`\`\`";
+    const ok = insertAtomicAtMarker(anchorInfo.token, "MARKDOWN", { markdown: md }, "MUTABLE");
+    if (ok) {
+      await sleep(150);
+      return;
+    }
     await openInsertMenu(["代码", "Code", "code"], anchorInfo);
 
     const languageInput = await waitForSelector("input[name='programming-language-input'], input[data-testid='programming-language-input']");
@@ -691,6 +873,23 @@ export function getBrowserPublishFunctionTemplate(payload: PublishPayload): stri
   }
 
   async function insertPost(item, anchorInfo) {
+    // Fast path: inject TWEET atomic via React fiber. X looks up the
+    // tweet metadata from data.tweet_id at render time, so we don't have
+    // to open the Insert > 帖子 dialog and paste the URL.
+    const tweetIdMatch = (item.url || "").match(/\\/status\\/(\\d+)/);
+    if (tweetIdMatch) {
+      const ok = insertAtomicAtMarker(
+        anchorInfo.token,
+        "TWEET",
+        { tweet_id: tweetIdMatch[1] },
+        "IMMUTABLE",
+      );
+      if (ok) {
+        await sleep(150);
+        return;
+      }
+    }
+
     let urlInput = await openInsertPostDialog(anchorInfo);
     if (!(urlInput instanceof HTMLInputElement) && !(urlInput instanceof HTMLTextAreaElement)) {
       urlInput =
@@ -783,7 +982,161 @@ export function getBrowserPublishFunctionTemplate(payload: PublishPayload): stri
     }
   }
 
+  // Find the editor's React props.onFilesAdded (the same handler that
+  // fires when a user drops a file into the editor). Returns the function
+  // or null. This bypasses the Insert > 媒体 menu entirely and is the
+  // only image-upload path that yields a server-bound mediaId we can
+  // reference safely from the saved EditorState.
+  function getOnFilesAddedProp() {
+    const editor = findEditor();
+    if (!editor) return null;
+    const fiberKey = Object.keys(editor).find(
+      (k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$")
+    );
+    if (!fiberKey) return null;
+    let f = editor[fiberKey];
+    let depth = 0;
+    while (f && depth < 50) {
+      const p = f.memoizedProps || f.stateNode?.props;
+      if (p && typeof p.onFilesAdded === "function") return p.onFilesAdded;
+      f = f.return;
+      depth += 1;
+    }
+    return null;
+  }
+
+  // Snapshot all MEDIA entity keys currently referenced by atomic blocks
+  // so we can spot the new one onFilesAdded inserts.
+  function snapshotMediaEntityKeys(cs) {
+    const seen = new Set();
+    cs.getBlockMap().forEach((b) => {
+      if (b.getType() !== "atomic") return;
+      b.findEntityRanges(
+        (c) => !!c.getEntity(),
+        (start) => {
+          const ek = b.getCharacterList().get(start)?.getEntity?.();
+          if (!ek) return;
+          try {
+            const ent = cs.getEntity(ek);
+            if (ent?.getType?.() === "MEDIA") seen.add(ek);
+          } catch { /* ignore */ }
+        }
+      );
+    });
+    return seen;
+  }
+
+  async function insertImageViaOnFilesAdded(item, anchorInfo) {
+    const sn = getDraftStateNode();
+    const onFilesAdded = getOnFilesAddedProp();
+    if (!sn || !onFilesAdded) return false;
+
+    try {
+      const csBefore = sn.props.editorState.getCurrentContent();
+      const beforeKeys = snapshotMediaEntityKeys(csBefore);
+
+      const file = base64ToFile(item.base64, item.fileName, item.mimeType);
+      onFilesAdded([file]);
+
+      // Poll for the new MEDIA entity (X uploads via its own pipeline).
+      let newKey = null;
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline && !newKey) {
+        await sleep(800);
+        const cs = sn.props.editorState.getCurrentContent();
+        cs.getBlockMap().forEach((b) => {
+          if (b.getType() !== "atomic") return;
+          b.findEntityRanges(
+            (c) => !!c.getEntity(),
+            (start) => {
+              const ek = b.getCharacterList().get(start)?.getEntity?.();
+              if (!ek || beforeKeys.has(ek)) return;
+              try {
+                const ent = cs.getEntity(ek);
+                if (ent?.getType?.() === "MEDIA") {
+                  const data = ent.getData();
+                  const mi = data?.mediaItems?.[0] || data?.media_items?.[0];
+                  if (mi?.mediaId || mi?.media_id) newKey = ek;
+                }
+              } catch { /* ignore */ }
+            }
+          );
+        });
+      }
+      if (!newKey) return false;
+
+      // The atomic block onFilesAdded inserted is at the editor's
+      // current cursor position (typically end-of-doc). Move it to the
+      // marker position by: (1) building a fresh atomic block referencing
+      // the same MEDIA entity at the marker location, (2) dropping the
+      // original auto-inserted block.
+      const editorState = sn.props.editorState;
+      const onChange = sn.props.onChange;
+      const EditorStateCtor = editorState.constructor;
+      const SelectionStateCtor = editorState.getSelection().constructor;
+      const cs = editorState.getCurrentContent();
+      const blockMap = cs.getBlockMap();
+
+      // Find marker block + original (auto-inserted) atomic block carrying our new entity
+      let markerKey = null;
+      let originKey = null;
+      blockMap.forEach((b, key) => {
+        if (b.getType() === "atomic") {
+          let hasNewKey = false;
+          b.findEntityRanges(
+            (c) => !!c.getEntity(),
+            (start) => {
+              const ek = b.getCharacterList().get(start)?.getEntity?.();
+              if (ek === newKey) hasNewKey = true;
+            }
+          );
+          if (hasNewKey) originKey = key;
+        } else if ((b.getText() || "").trim() === anchorInfo.token) {
+          markerKey = key;
+        }
+      });
+      if (!markerKey || !originKey) {
+        // Original got lost or marker was already cleared — nothing to do
+        return true;
+      }
+
+      // Build a clone of the atomic at the marker position
+      const origin = blockMap.get(originKey);
+      const charList = origin.getCharacterList();
+      const cloned = origin.merge({
+        key: markerKey,
+        type: "atomic",
+        text: " ",
+        characterList: charList,
+      });
+
+      let newBlockMap = blockMap.set(markerKey, cloned);
+      // Drop the original auto-inserted atomic
+      newBlockMap = newBlockMap.delete(originKey);
+
+      const safeSel = SelectionStateCtor.createEmpty(markerKey);
+      const newContent = cs
+        .set("blockMap", newBlockMap)
+        .set("selectionBefore", safeSel)
+        .set("selectionAfter", safeSel);
+      let newState = EditorStateCtor.push(editorState, newContent, "remove-range");
+      newState = EditorStateCtor.moveSelectionToEnd(newState);
+      onChange(newState);
+      return true;
+    } catch (e) {
+      console.warn("insertImageViaOnFilesAdded failed:", e?.message || e);
+      return false;
+    }
+  }
+
   async function insertImage(item, anchorInfo) {
+    // Fast path: drop the file through the editor's React onFilesAdded
+    // prop (same code path as drag-drop). Yields a server-bound mediaId
+    // and lets X's autosave handle persistence — no menu click needed.
+    const ok = await insertImageViaOnFilesAdded(item, anchorInfo);
+    if (ok) return;
+
+    // Fallback: legacy Insert > 媒体 menu flow.
     try {
       await openInsertMenu(["媒体", "Media", "media", "photo", "image"], anchorInfo);
       const input = await waitForFileInput(anchorInfo.rect);
@@ -794,12 +1147,25 @@ export function getBrowserPublishFunctionTemplate(payload: PublishPayload): stri
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
       await waitForMediaUpload(15000);
+    } catch (e) {
+      console.warn("insertImage menu fallback failed:", e?.message || e);
+      // Marker stays — removeResidualMarkers cleans up at end-of-flow.
     } finally {
       removeAnchorToken(anchorInfo.token);
     }
   }
 
   async function insertDivider(anchorInfo) {
+    // Fast path: inject DIVIDER atomic via React fiber. Avoids the
+    // notoriously time-sensitive Insert > 分割线 menu click that X
+    // periodically renames or re-renders.
+    const ok = insertAtomicAtMarker(anchorInfo.token, "DIVIDER", {}, "IMMUTABLE");
+    if (ok) {
+      await sleep(150);
+      return;
+    }
+    // Fallback to the legacy menu flow if fiber injection fails (e.g.
+    // X swapped out Draft.js for a different rich-text engine).
     await openInsertMenu(["分割线", "Divider", "divider", "separator", "horizontal rule"], anchorInfo);
     await sleep(500);
     removeAnchorToken(anchorInfo.token);
@@ -904,6 +1270,12 @@ export function getBrowserPublishFunctionTemplate(payload: PublishPayload): stri
 
     removeResidualMarkers();
     await uploadCover();
+    // Note: Plain Fiber onChange does not reliably trigger X's debounced
+    // autosave (which listens for trusted user input). The orchestrator
+    // (Node side) is responsible for sending one CDP-level Backspace
+    // via browser_press_key after this function returns, then waiting
+    // for autosave to flush. Synthesized events from inside the page
+    // do not work — tested in spike/x-article-direct-api.
     console.log("X publish script finished.");
     return { ok: true, processedItems, totalItems: payload.items.length };
   }

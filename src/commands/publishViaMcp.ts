@@ -39,6 +39,47 @@ const PLAYWRIGHT_EXTENSION_ID = "mmlmfjhmonkocbjadbfplnigmagldckm";
 const MCP_REQUEST_TIMEOUT_MS = 5_000;
 const MCP_EVALUATE_TIMEOUT_MS = 180_000;
 const REQUIRED_PLAYWRIGHT_TOOLS = ["browser_navigate", "browser_wait_for", "browser_evaluate"] as const;
+const OPTIONAL_PLAYWRIGHT_TOOLS = ["browser_press_key"] as const;
+
+// Independent Fiber-based marker cleanup. Runs after the publish function
+// regardless of whether it succeeded — DOM textContent mutations from the
+// publish flow do not survive Draft.js / X autosave, so we drop every
+// MPH_MARKER_N block straight from EditorState here.
+const FIBER_MARKER_CLEANUP_FN = `async () => {
+  const ed = document.querySelector("[data-contents='true']")?.closest("[contenteditable='true']")
+          || document.querySelector("[contenteditable='true']");
+  if (!ed) return { ok: false, reason: "no editor" };
+  const fiberKey = Object.keys(ed).find((k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$"));
+  if (!fiberKey) return { ok: false, reason: "no fiber" };
+  let f = ed[fiberKey], depth = 0, sn = null;
+  while (f && depth < 60) {
+    const node = f.stateNode;
+    if (node?.props?.editorState && typeof node.props.onChange === "function") { sn = node; break; }
+    f = f.return; depth += 1;
+  }
+  if (!sn) return { ok: false, reason: "no draft state" };
+  const editorState = sn.props.editorState;
+  const onChange = sn.props.onChange;
+  const ESCtor = editorState.constructor;
+  const SSCtor = editorState.getSelection().constructor;
+  const cs = editorState.getCurrentContent();
+  const blockMap = cs.getBlockMap();
+  const markerLine = /^\\s*MPH_MARKER_\\d+\\s*$/;
+  const before = blockMap.size;
+  const newMap = blockMap.filter((b) => {
+    if (b.getType() === "atomic") return true;
+    return !markerLine.test(b.getText() || "");
+  });
+  const removed = before - newMap.size;
+  if (removed === 0) return { ok: true, removed: 0 };
+  const survivor = newMap.first();
+  const safeSel = survivor ? SSCtor.createEmpty(survivor.getKey()) : editorState.getSelection();
+  const newCs = cs.set("blockMap", newMap).set("selectionBefore", safeSel).set("selectionAfter", safeSel);
+  let newState = ESCtor.push(editorState, newCs, "remove-range");
+  newState = ESCtor.moveSelectionToEnd(newState);
+  onChange(newState);
+  return { ok: true, removed, remainingBlocks: newMap.size };
+}`;
 
 type PublishSourceNote = {
 	file: TFile;
@@ -117,13 +158,60 @@ export async function publishViaDetectedMcp(
 					throw new Error("Editor did not become ready after clicking create.");
 				}`),
 			}, MCP_EVALUATE_TIMEOUT_MS);
-			const publishResult = parsePlaywrightToolResult(
-				await client.callTool(
-					"browser_evaluate",
-					{ function: normalizeEvaluateSource(functionSource) },
-					MCP_EVALUATE_TIMEOUT_MS,
-				),
-			);
+			let publishResult: unknown = null;
+			let publishErr: unknown = null;
+			try {
+				publishResult = parsePlaywrightToolResult(
+					await client.callTool(
+						"browser_evaluate",
+						{ function: normalizeEvaluateSource(functionSource) },
+						MCP_EVALUATE_TIMEOUT_MS,
+					),
+				);
+			} catch (error) {
+				publishErr = error;
+			}
+
+			// Independent Fiber-based marker cleanup runs even if the publish
+			// function above raised (e.g. "Execution context was destroyed"
+			// from X-side navigation). DOM-only mutations don't survive
+			// Draft.js's EditorState — only Fiber.onChange does.
+			let cleanupRemoved: number | null = null;
+			try {
+				const cleanupResult = parsePlaywrightToolResult(
+					await client.callTool(
+						"browser_evaluate",
+						{ function: FIBER_MARKER_CLEANUP_FN },
+						MCP_EVALUATE_TIMEOUT_MS,
+					),
+				);
+				if (cleanupResult && typeof cleanupResult === "object" && "removed" in cleanupResult) {
+					cleanupRemoved = (cleanupResult as { removed?: number }).removed ?? null;
+				}
+			} catch {
+				// best-effort
+			}
+
+			// Trigger autosave: synthesized events from inside the page do
+			// NOT fire X's debounced autosave (verified upstream in
+			// spike/x-article-direct-api). One real CDP keystroke does.
+			try {
+				await client.callTool("browser_press_key", { key: "Backspace" }, MCP_REQUEST_TIMEOUT_MS);
+			} catch {
+				// browser_press_key may not be available on older Playwright MCP;
+				// without it the server-side persist of the cleanup may be delayed
+				// until the user touches the editor.
+			}
+			await new Promise<void>((resolve) => setTimeout(resolve, 8000));
+
+			await appendPublishLog(plugin, "publish.cleanup", {
+				sourceNotePath: sourceNote?.file.path ?? null,
+				cleanupRemoved,
+			});
+
+			if (publishErr && !isSuccessfulPublishResult(publishResult)) {
+				throw publishErr;
+			}
 			if (!isSuccessfulPublishResult(publishResult)) {
 				throw new Error(
 					`Browser publish script did not report success. Result: ${stringifyPlaywrightResult(publishResult)}`,
