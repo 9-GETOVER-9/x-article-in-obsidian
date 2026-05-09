@@ -336,14 +336,14 @@ type Bridge = ReturnType<typeof makeBridge>;
 // Image upload via editor's React props.onFilesAdded
 // ───────────────────────────────────────────────────────────────────────────
 
-const CHUNK_SIZE = 5500;
-
+// MCP runs over stdio JSON-RPC — no cmdline size limit, so we can stage
+// the entire base64 payload in a single browser_evaluate call. (The
+// upstream bb-browser variant chunked because of cmd.exe's 32 KB limit.)
 async function stageBytes(bridge: Bridge, base64: string): Promise<void> {
-	await bridge.evalJS(`(()=>{window.__imgChunks=[];return 'reset'})()`);
-	for (let i = 0; i < base64.length; i += CHUNK_SIZE) {
-		const chunk = base64.slice(i, i + CHUNK_SIZE);
-		await bridge.evalJS(`(()=>{window.__imgChunks.push('${chunk}');return window.__imgChunks.length})()`);
-	}
+	await bridge.evalJS(
+		`(()=>{window.__imgB64=${JSON.stringify(base64)};return window.__imgB64.length})()`,
+		MCP_EVALUATE_TIMEOUT_MS,
+	);
 }
 
 async function uploadOneImage(bridge: Bridge, image: ImageSegment): Promise<MediaInfo> {
@@ -353,7 +353,7 @@ async function uploadOneImage(bridge: Bridge, image: ImageSegment): Promise<Medi
 
 	const callJs = `(async()=>{
     try {
-      const b64 = (window.__imgChunks||[]).join('');
+      const b64 = window.__imgB64 || '';
       const bin = atob(b64);
       const u = new Uint8Array(bin.length);
       for (let i=0; i<bin.length; i++) u[i] = bin.charCodeAt(i);
@@ -383,7 +383,7 @@ async function uploadOneImage(bridge: Bridge, image: ImageSegment): Promise<Medi
         }
       });
       onFilesAdded([file]);
-      delete window.__imgChunks;
+      delete window.__imgB64;
       return {ok:true, beforeKeys: Array.from(before)};
     } catch (e) { return {ok:false, step:'exception', err: String(e?.message||e)}; }
   })()`;
@@ -395,7 +395,7 @@ async function uploadOneImage(bridge: Bridge, image: ImageSegment): Promise<Medi
 	let info: MediaInfo | null = null;
 	const deadline = Date.now() + 60000;
 	while (Date.now() < deadline) {
-		await bridge.sleep(800);
+		await bridge.sleep(300);
 		const probe = (await bridge.evalJS(
 			`(()=>{
         function getFiber(n){const k=Object.keys(n).find(x=>x.startsWith('__reactFiber$'));return k?n[k]:null}
@@ -621,7 +621,6 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
 					error: String((lastErr as Error).message || lastErr),
 				});
 			}
-			await new Promise<void>((r) => setTimeout(r, 1500));
 		}
 
 		if (imgIdx > 0) await flushAutosave(bridge);
@@ -642,6 +641,15 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
 
 		const sr = await saveContent(bridge, articleId, contentState);
 		await appendPublishLog(plugin, "publish.api.save_done", sr);
+
+		// The editor's local Draft EditorState is still pre-publish — reload
+		// the page so the user sees the freshly-saved article without
+		// having to refresh manually.
+		try {
+			await bridge.evalJS(`(()=>{location.reload();return 'reloading'})()`);
+		} catch {
+			// ignore — page may navigate before evalJS returns
+		}
 
 		new Notice(plugin.t("notice.publishSuccess", { source: runtime.source }));
 	} finally {

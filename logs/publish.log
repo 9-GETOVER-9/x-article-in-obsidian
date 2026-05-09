@@ -1,0 +1,56 @@
+[2026-05-09T13:57:38.076Z] publish.api.preflight
+{
+  "sourceNotePath": "20_创业/内容创作/X推特/01-待深化/x-article-format-test.md"
+}
+[2026-05-09T13:57:38.251Z] publish.api.segments
+{
+  "title": "X Article 全格式测试文档",
+  "segmentTypes": {
+    "text": 60,
+    "divider": 5,
+    "code": 4,
+    "image": 5,
+    "tweet": 2
+  }
+}
+[2026-05-09T13:58:10.180Z] publish.api.image_ok
+{
+  "index": 1,
+  "total": 5,
+  "mediaIdSuffix": "24627201"
+}
+[2026-05-09T13:58:40.222Z] publish.api.image_ok
+{
+  "index": 2,
+  "total": 5,
+  "mediaIdSuffix": "96350208"
+}
+[2026-05-09T13:58:57.165Z] publish.api.image_ok
+{
+  "index": 3,
+  "total": 5,
+  "mediaIdSuffix": "67307522"
+}
+[2026-05-09T13:59:14.196Z] publish.api.image_ok
+{
+  "index": 4,
+  "total": 5,
+  "mediaIdSuffix": "28719872"
+}
+[2026-05-09T13:59:27.169Z] publish.api.image_ok
+{
+  "index": 5,
+  "total": 5,
+  "mediaIdSuffix": "28363009"
+}
+[2026-05-09T13:59:39.133Z] publish.api.content_built
+{
+  "blocks": 76,
+  "entities": 22
+}
+[2026-05-09T13:59:44.149Z] publish.api.save_done
+{
+  "status": 200,
+  "err": null,
+  "hasData": true
+}
