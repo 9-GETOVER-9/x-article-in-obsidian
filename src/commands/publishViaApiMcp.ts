@@ -333,6 +333,45 @@ function makeBridge(client: StdioMcpClient) {
 type Bridge = ReturnType<typeof makeBridge>;
 
 // ───────────────────────────────────────────────────────────────────────────
+// Page-side progress banner
+// ───────────────────────────────────────────────────────────────────────────
+
+const BANNER_ID = "__x_article_uploader_banner__";
+const BANNER_COLORS: Record<"warn" | "work" | "done", string> = {
+	warn: "linear-gradient(90deg,#f59e0b,#ef4444)",
+	work: "linear-gradient(90deg,#1d9bf0,#7c3aed)",
+	done: "linear-gradient(90deg,#10b981,#1d9bf0)",
+};
+
+async function setBanner(bridge: Bridge, text: string, kind: "warn" | "work" | "done" = "work"): Promise<void> {
+	const color = BANNER_COLORS[kind];
+	try {
+		await bridge.evalJS(`(()=>{
+      let el=document.getElementById(${JSON.stringify(BANNER_ID)});
+      if(!el){
+        el=document.createElement('div');
+        el.id=${JSON.stringify(BANNER_ID)};
+        document.body.appendChild(el);
+      }
+      el.style.cssText=[
+        'position:fixed','top:0','left:0','right:0','z-index:2147483647',
+        'background:'+${JSON.stringify(color)},
+        'color:#fff','font-size:15px','font-weight:600',
+        'padding:12px 20px','text-align:center',
+        'box-shadow:0 2px 12px rgba(0,0,0,0.25)',
+        'font-family:-apple-system,Segoe UI,system-ui,sans-serif',
+        'letter-spacing:0.3px','transition:background 0.25s ease',
+        'pointer-events:none'
+      ].join(';');
+      el.textContent=${JSON.stringify(text)};
+      return 'banner-set';
+    })()`);
+	} catch {
+		// banner is cosmetic — failures shouldn't abort the publish
+	}
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Image upload via editor's React props.onFilesAdded
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -615,6 +654,8 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
 		if (!urlInfo?.id) throw new Error(`Tab is not on an article edit page: ${urlInfo?.url}`);
 		const articleId = urlInfo.id;
 
+		await setBanner(bridge, "⚠  操作中：请保持本标签页前台，不要在编辑器内手动操作", "warn");
+
 		// Upload images, mapping by their position in segments
 		const mediaInfoBySegmentIndex = new Map<number, MediaInfo>();
 		let imgIdx = 0;
@@ -622,6 +663,7 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
 			const seg = segments[i];
 			if (!seg || seg.type !== "image") continue;
 			imgIdx += 1;
+			await setBanner(bridge, `📷  正在上传图片 ${imgIdx} / ${imageSegs.length}…`, "work");
 			let lastErr: unknown = null;
 			for (let attempt = 1; attempt <= 2; attempt += 1) {
 				try {
@@ -647,13 +689,17 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
 			}
 		}
 
-		if (imgIdx > 0) await flushAutosave(bridge);
+		if (imgIdx > 0) {
+			await setBanner(bridge, "💾  绑定媒体到文章中…", "work");
+			await flushAutosave(bridge);
+		}
 
 		// Cover image: upload via the same onFilesAdded path (the auto-
 		// inserted atomic in the editor body gets discarded when our
 		// content_state save replaces everything), then POST
 		// ArticleEntityUpdateCoverMedia with the bound mediaId.
 		if (payload.cover) {
+			await setBanner(bridge, "🖼  上传封面图…", "work");
 			try {
 				const coverInfo = await uploadOneImage(bridge, {
 					type: "image",
@@ -682,6 +728,7 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
 		});
 
 		if (payload.title) {
+			await setBanner(bridge, "📌  保存标题…", "work");
 			try {
 				await saveTitle(bridge, articleId, payload.title);
 			} catch (e) {
@@ -689,12 +736,15 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
 			}
 		}
 
+		await setBanner(bridge, "💾  保存正文内容…", "work");
 		const sr = await saveContent(bridge, articleId, contentState);
 		await appendPublishLog(plugin, "publish.api.save_done", sr);
 
 		// The editor's local Draft EditorState is still pre-publish — reload
 		// the page so the user sees the freshly-saved article without
 		// having to refresh manually.
+		await setBanner(bridge, "✅  上传完成，即将刷新页面…", "done");
+		await new Promise<void>((r) => setTimeout(r, 1200));
 		try {
 			await bridge.evalJS(`(()=>{location.reload();return 'reloading'})()`);
 		} catch {
