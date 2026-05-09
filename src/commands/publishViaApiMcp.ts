@@ -649,13 +649,42 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
           ].join(";");
           el.textContent = "⚠  操作中：请保持本标签页前台，不要在编辑器内手动操作";
         }
+        function isVisible(el) {
+          if (!el) return false;
+          const s = window.getComputedStyle(el);
+          if (s.display === "none" || s.visibility === "hidden") return false;
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        }
+        // Robust create-button finder: aria-label across locales,
+        // empty-state link, href fallback, SVG-path fingerprint.
+        function findCreateButton() {
+          const ariaTerms = new Set([
+            "create","compose","write","draft","new article","撰写","新建","创建",
+            "新規","作成","作成する","redactar","écrire","créer","escribir","schreiben",
+            "verfassen","escrever","새 글 작성","글 작성","記事を作成"
+          ].map((s) => s.toLowerCase()));
+          for (const btn of document.querySelectorAll("button, a[role='button'], [role='link']")) {
+            if (!isVisible(btn)) continue;
+            const aria = (btn.getAttribute("aria-label") || "").toLowerCase().trim();
+            if (aria && ariaTerms.has(aria)) return btn;
+          }
+          const empty = document.querySelector("a[data-testid='empty_state_button_text']");
+          if (empty && isVisible(empty)) return empty;
+          for (const a of document.querySelectorAll("a[href*='/compose/articles']")) {
+            if (isVisible(a)) return a;
+          }
+          for (const btn of document.querySelectorAll("button")) {
+            if (!isVisible(btn)) continue;
+            for (const p of btn.querySelectorAll("svg path[d]")) {
+              const d = p.getAttribute("d") || "";
+              if (d.startsWith("M14.543 5.04297")) return btn;
+            }
+          }
+          return null;
+        }
         paintBanner();
-        const btn =
-          document.querySelector("button[aria-label='create']") ||
-          Array.from(document.querySelectorAll("button[role='button'], button")).find((b) =>
-            (b.getAttribute("aria-label") || "").toLowerCase() === "create"
-          ) ||
-          document.querySelector("a[data-testid='empty_state_button_text']");
+        const btn = findCreateButton();
         if (!btn) throw new Error("Create button not found.");
         btn.click();
         for (let i = 0; i < 30; i++) {

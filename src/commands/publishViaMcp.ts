@@ -132,11 +132,41 @@ export async function publishViaDetectedMcp(
 			await client.callTool("browser_evaluate", {
 				function: normalizeEvaluateSource(`async () => {
 					const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-					const findCreateButton = () =>
-						document.querySelector("button[aria-label='create']") ||
-						Array.from(document.querySelectorAll("button[role='button'], button")).find((button) =>
-							(button.getAttribute("aria-label") || "").toLowerCase() === "create"
-						);
+					function isVisible(el) {
+						if (!el) return false;
+						const s = window.getComputedStyle(el);
+						if (s.display === "none" || s.visibility === "hidden") return false;
+						const r = el.getBoundingClientRect();
+						return r.width > 0 && r.height > 0;
+					}
+					// Robust create-button finder. X periodically rewrites this
+					// surface (different aria-label per locale, redesigns), so
+					// we try several strategies and stop at the first hit.
+					function findCreateButton() {
+						const ariaTerms = new Set([
+							"create","compose","write","draft","new article","撰写","新建","创建",
+							"新規","作成","作成する","redactar","écrire","créer","escribir","schreiben",
+							"verfassen","escrever","새 글 작성","글 작성","記事を作成"
+						].map((s) => s.toLowerCase()));
+						for (const btn of document.querySelectorAll("button, a[role='button'], [role='link']")) {
+							if (!isVisible(btn)) continue;
+							const aria = (btn.getAttribute("aria-label") || "").toLowerCase().trim();
+							if (aria && ariaTerms.has(aria)) return btn;
+						}
+						const empty = document.querySelector("a[data-testid='empty_state_button_text']");
+						if (empty && isVisible(empty)) return empty;
+						for (const a of document.querySelectorAll("a[href*='/compose/articles']")) {
+							if (isVisible(a)) return a;
+						}
+						for (const btn of document.querySelectorAll("button")) {
+							if (!isVisible(btn)) continue;
+							for (const p of btn.querySelectorAll("svg path[d]")) {
+								const d = p.getAttribute("d") || "";
+								if (d.startsWith("M14.543 5.04297")) return btn;
+							}
+						}
+						return null;
+					}
 
 					const button = findCreateButton();
 					if (!button) {
