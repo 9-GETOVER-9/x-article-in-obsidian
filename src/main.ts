@@ -3,6 +3,7 @@ import {
 	COPY_PUBLISH_SCRIPT_COMMAND_ID,
 	OPEN_GUIDE_COMMAND_ID,
 	OPEN_PREVIEW_COMMAND_ID,
+	PUBLISH_VIA_API_MCP_COMMAND_ID,
 	PUBLISH_VIA_MCP_COMMAND_ID,
 	REFRESH_PREVIEW_COMMAND_ID,
 	VIEW_TYPE_X_ARTICLE_PREVIEW,
@@ -65,6 +66,16 @@ export default class XArticleInObsidianPlugin extends Plugin {
 			callback: () => {
 				void import("./commands/publishViaMcp").then(({ publishViaDetectedMcp }) =>
 					publishViaDetectedMcp(this),
+				);
+			},
+		});
+
+		this.addCommand({
+			id: PUBLISH_VIA_API_MCP_COMMAND_ID,
+			name: this.t("command.publishViaApiMcp"),
+			callback: () => {
+				void import("./commands/publishViaApiMcp").then(({ publishViaApiMcp }) =>
+					publishViaApiMcp(this),
 				);
 			},
 		});

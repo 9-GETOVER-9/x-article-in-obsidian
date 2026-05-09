@@ -6,6 +6,7 @@ import {
 	type PublishImageAsset,
 	type PublishPayload,
 } from "../vendor/x-article-publish/template";
+export type { PublishItem, PublishImageAsset, PublishPayload };
 import type XArticleInObsidianPlugin from "../main";
 
 const IMAGE_FETCH_CONCURRENCY = 4;
@@ -74,6 +75,14 @@ async function buildPublishPayloadFromActiveNote(
 	}
 
 	return buildPublishPayload(plugin, markdownView.file, markdownView.editor.getValue());
+}
+
+export async function buildPublishPayloadForNote(
+	plugin: XArticleInObsidianPlugin,
+	file: TFile,
+	rawMarkdown: string,
+): Promise<PublishPayload> {
+	return buildPublishPayload(plugin, file, rawMarkdown);
 }
 
 async function buildPublishPayload(

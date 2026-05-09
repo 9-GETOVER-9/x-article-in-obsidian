@@ -7,6 +7,7 @@ export type TranslationKey =
 	| "command.refreshPreview"
 	| "command.copyPublishScript"
 	| "command.publishViaMcp"
+	| "command.publishViaApiMcp"
 	| "command.openGuide"
 	| "view.title"
 	| "view.heroBadge"
@@ -103,6 +104,7 @@ const translations: Translations = {
 		"command.refreshPreview": "Refresh preview",
 		"command.copyPublishScript": "Copy X draft upload script",
 		"command.publishViaMcp": "Upload article to draft through browser",
+		"command.publishViaApiMcp": "Upload article to draft via API (faster, less brittle)",
 		"command.openGuide": "Open quick start guide",
 		"view.title": "X article preview",
 		"view.heroBadge": "Preview",
@@ -201,6 +203,7 @@ const translations: Translations = {
 		"command.refreshPreview": "刷新预览",
 		"command.copyPublishScript": "复制 X 草稿上传脚本",
 		"command.publishViaMcp": "通过浏览器上传到草稿箱",
+		"command.publishViaApiMcp": "通过 API 上传到草稿箱（更快更稳）",
 		"command.openGuide": "打开快速使用指南",
 		"view.title": "X 文章预览",
 		"view.heroBadge": "预览",

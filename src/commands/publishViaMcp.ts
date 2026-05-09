@@ -991,7 +991,21 @@ function validateBase64urlToken(token: string): boolean {
 	}
 }
 
-class StdioMcpClient {
+export {
+	detectPlaywrightRuntime,
+	REQUIRED_PLAYWRIGHT_TOOLS,
+	FIBER_MARKER_CLEANUP_FN,
+	normalizeMcpErrorMessage,
+	normalizeEvaluateSource,
+	isSuccessfulPublishResult,
+	parsePlaywrightToolResult,
+	stringifyPlaywrightResult,
+	MCP_EVALUATE_TIMEOUT_MS,
+	MCP_REQUEST_TIMEOUT_MS,
+};
+export type { McpRuntimeConfig };
+
+export class StdioMcpClient {
 	private nextId = 1;
 	private pending = new Map<number, { resolve: (value: JsonRpcResponse) => void; reject: (reason?: unknown) => void }>();
 	private buffer = "";
