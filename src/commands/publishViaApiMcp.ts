@@ -460,6 +460,7 @@ const FEATURES = {
 const QUERY_IDS = {
 	UPDATE_CONTENT: "M7N2FrPrlOmu-YrVIBxFnQ",
 	UPDATE_TITLE: "x75E2ABzm8_mGTg1bz8hcA",
+	UPDATE_COVER: "Es8InPh7mEkK9PxclxFAVQ",
 	GET_BY_ID: "8-OHhj8-KCAHUP8XjPaAYQ",
 };
 const AUTH_HEADERS_JS = `(()=>{
@@ -499,6 +500,29 @@ async function saveTitle(bridge: Bridge, articleId: string, title: string): Prom
     return 'ok';
   })()`;
 	await bridge.evalJS(js);
+}
+
+async function saveCoverMedia(
+	bridge: Bridge,
+	articleId: string,
+	mediaId: string,
+	mediaCategory = "DraftTweetImage",
+): Promise<{ status: number; err: string | null }> {
+	const body = {
+		variables: {
+			articleEntityId: articleId,
+			coverMedia: { media_id: mediaId, media_category: mediaCategory },
+		},
+		features: FEATURES,
+		queryId: QUERY_IDS.UPDATE_COVER,
+	};
+	const js = `(async()=>{
+    const H=${AUTH_HEADERS_JS};
+    const r=await fetch('https://x.com/i/api/graphql/${QUERY_IDS.UPDATE_COVER}/ArticleEntityUpdateCoverMedia',{method:'POST',credentials:'include',headers:{...H,'content-type':'application/json'},body:JSON.stringify(${JSON.stringify(body)})});
+    const t=await r.text();let j=null;try{j=JSON.parse(t)}catch{}
+    return JSON.stringify({status:r.status,err:j?.errors?.[0]?.message||null});
+  })()`;
+	return (await bridge.evalJS(js)) as { status: number; err: string | null };
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -624,6 +648,32 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
 		}
 
 		if (imgIdx > 0) await flushAutosave(bridge);
+
+		// Cover image: upload via the same onFilesAdded path (the auto-
+		// inserted atomic in the editor body gets discarded when our
+		// content_state save replaces everything), then POST
+		// ArticleEntityUpdateCoverMedia with the bound mediaId.
+		if (payload.cover) {
+			try {
+				const coverInfo = await uploadOneImage(bridge, {
+					type: "image",
+					alt: payload.cover.alt || "cover",
+					fileName: payload.cover.fileName,
+					mimeType: payload.cover.mimeType,
+					base64: payload.cover.base64,
+				});
+				await flushAutosave(bridge);
+				const cr = await saveCoverMedia(
+					bridge,
+					articleId,
+					coverInfo.mediaId,
+					coverInfo.mediaCategory || "DraftTweetImage",
+				);
+				await appendPublishLog(plugin, "publish.api.cover_save", { ...cr, mediaIdSuffix: coverInfo.mediaId.slice(-8) });
+			} catch (e) {
+				await appendPublishLog(plugin, "publish.api.cover_fail", { error: String((e as Error).message || e) });
+			}
+		}
 
 		const contentState = buildContentState(segments, mediaInfoBySegmentIndex);
 		await appendPublishLog(plugin, "publish.api.content_built", {
