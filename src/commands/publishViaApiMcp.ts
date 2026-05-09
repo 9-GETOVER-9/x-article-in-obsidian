@@ -10,6 +10,7 @@ import {
 	parsePlaywrightToolResult,
 	MCP_EVALUATE_TIMEOUT_MS,
 	MCP_REQUEST_TIMEOUT_MS,
+	type PublishSourceNote,
 } from "./publishViaMcp";
 import {
 	buildPublishFunctionForNote,  // unused but ensures module is loaded
@@ -504,15 +505,27 @@ async function saveTitle(bridge: Bridge, articleId: string, title: string): Prom
 // Orchestrator
 // ───────────────────────────────────────────────────────────────────────────
 
-export async function publishViaApiMcp(plugin: XArticleInObsidianPlugin): Promise<void> {
+export async function publishViaApiMcp(
+	plugin: XArticleInObsidianPlugin,
+	sourceNote?: PublishSourceNote,
+): Promise<void> {
 	try {
-		const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
-		const file = view?.file;
-		if (!file || !view) {
+		// Prefer an explicit sourceNote (passed from the preview panel "publish"
+		// button — that view is the active leaf, not the markdown view). Only
+		// fall back to the active markdown view when invoked from the command
+		// palette while a markdown leaf is focused.
+		let file: TFile | null = sourceNote?.file ?? null;
+		let content: string | null = sourceNote?.content ?? null;
+		if (!file || content === null) {
+			const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
+			file = view?.file ?? file;
+			content = view?.editor.getValue() ?? content;
+		}
+		if (!file || content === null) {
 			new Notice("Open a markdown note first.");
 			return;
 		}
-		await runApiPublish(plugin, file, view.editor.getValue());
+		await runApiPublish(plugin, file, content);
 	} catch (error) {
 		await appendPublishLog(plugin, "publish.api.error", { error });
 		new Notice(normalizeMcpErrorMessage(error, plugin));

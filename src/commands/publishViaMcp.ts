@@ -81,7 +81,7 @@ const FIBER_MARKER_CLEANUP_FN = `async () => {
   return { ok: true, removed, remainingBlocks: newMap.size };
 }`;
 
-type PublishSourceNote = {
+export type PublishSourceNote = {
 	file: TFile;
 	content: string;
 };

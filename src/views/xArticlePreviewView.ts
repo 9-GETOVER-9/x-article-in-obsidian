@@ -223,14 +223,16 @@ export class XArticlePreviewView extends ItemView {
 			}
 			// Use the user's configured default mode (api / menu). The two
 			// stand-alone command-palette commands still let them pick
-			// explicitly per-invocation.
+			// explicitly per-invocation. Pass `context` so api mode also
+			// works from the preview panel (where the active leaf is the
+			// preview view, not a MarkdownView).
 			const mode = this.plugin.settings.publishMode ?? "api";
 			if (mode === "menu") {
 				const { publishViaDetectedMcp } = await import("../commands/publishViaMcp");
 				await publishViaDetectedMcp(this.plugin, context);
 			} else {
 				const { publishViaApiMcp } = await import("../commands/publishViaApiMcp");
-				await publishViaApiMcp(this.plugin);
+				await publishViaApiMcp(this.plugin, context);
 			}
 		} finally {
 			this.isPublishing = false;
