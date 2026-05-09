@@ -619,12 +619,37 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
 	try {
 		await client.assertToolsAvailable(REQUIRED_PLAYWRIGHT_TOOLS);
 		await client.callTool("browser_navigate", { url: "https://x.com/compose/articles" });
+		// Inject the warning banner the moment the page is reachable, before
+		// any other UI interaction. The user sees the "don't touch" message
+		// instantly instead of after clicking Create + parsing markdown.
+		const earlyBridge = makeBridge(client);
+		await setBanner(earlyBridge, "⚠  操作中：请保持本标签页前台，不要在编辑器内手动操作", "warn");
 		await client.callTool("browser_wait_for", { time: 2 });
 		await client.callTool(
 			"browser_evaluate",
 			{
 				function: normalizeEvaluateSource(`async () => {
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        function paintBanner() {
+          let el = document.getElementById("__x_article_uploader_banner__");
+          if (!el) {
+            el = document.createElement("div");
+            el.id = "__x_article_uploader_banner__";
+            document.body.appendChild(el);
+          }
+          el.style.cssText = [
+            "position:fixed","top:0","left:0","right:0","z-index:2147483647",
+            "background:linear-gradient(90deg,#f59e0b,#ef4444)",
+            "color:#fff","font-size:15px","font-weight:600",
+            "padding:12px 20px","text-align:center",
+            "box-shadow:0 2px 12px rgba(0,0,0,0.25)",
+            "font-family:-apple-system,Segoe UI,system-ui,sans-serif",
+            "letter-spacing:0.3px","transition:background 0.25s ease",
+            "pointer-events:none"
+          ].join(";");
+          el.textContent = "⚠  操作中：请保持本标签页前台，不要在编辑器内手动操作";
+        }
+        paintBanner();
         const btn =
           document.querySelector("button[aria-label='create']") ||
           Array.from(document.querySelectorAll("button[role='button'], button")).find((b) =>
@@ -634,9 +659,10 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
         if (!btn) throw new Error("Create button not found.");
         btn.click();
         for (let i = 0; i < 30; i++) {
+          paintBanner();
           const ed = document.querySelector("[data-contents='true']")?.closest("[contenteditable='true']")
                   || document.querySelector("[contenteditable='true']");
-          if (ed) return true;
+          if (ed) { paintBanner(); return true; }
           await sleep(200);
         }
         throw new Error("Editor did not become ready after clicking create.");
@@ -653,8 +679,6 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
 		)) as { url: string; id: string | null };
 		if (!urlInfo?.id) throw new Error(`Tab is not on an article edit page: ${urlInfo?.url}`);
 		const articleId = urlInfo.id;
-
-		await setBanner(bridge, "⚠  操作中：请保持本标签页前台，不要在编辑器内手动操作", "warn");
 
 		// Upload images, mapping by their position in segments
 		const mediaInfoBySegmentIndex = new Map<number, MediaInfo>();
