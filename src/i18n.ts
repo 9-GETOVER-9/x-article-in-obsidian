@@ -8,6 +8,7 @@ export type TranslationKey =
 	| "command.copyPublishScript"
 	| "command.publishViaMcp"
 	| "command.publishViaApiMcp"
+	| "command.publishViaInjectCoreMcp"
 	| "command.publishWithDefaultMode"
 	| "settings.publishMode.name"
 	| "settings.publishMode.desc"
@@ -110,6 +111,7 @@ const translations: Translations = {
 		"command.copyPublishScript": "Copy X draft upload script",
 		"command.publishViaMcp": "Upload article to draft through browser",
 		"command.publishViaApiMcp": "Upload article to draft via API (faster, less brittle)",
+		"command.publishViaInjectCoreMcp": "Upload current note with inject-core (Playwright)",
 		"command.publishWithDefaultMode": "Upload article to draft (use default mode)",
 		"settings.publishMode.name": "Default publish mode",
 		"settings.publishMode.desc":
@@ -215,6 +217,7 @@ const translations: Translations = {
 		"command.copyPublishScript": "复制 X 草稿上传脚本",
 		"command.publishViaMcp": "通过浏览器上传到草稿箱",
 		"command.publishViaApiMcp": "通过 API 上传到草稿箱（更快更稳）",
+		"command.publishViaInjectCoreMcp": "用 inject-core 上传当前笔记（Playwright）",
 		"command.publishWithDefaultMode": "上传到草稿箱（按默认模式）",
 		"settings.publishMode.name": "默认上传模式",
 		"settings.publishMode.desc":

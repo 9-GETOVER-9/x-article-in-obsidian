@@ -9,6 +9,8 @@
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
 		"lint": "eslint .",
+		"sync:inject-core": "node scripts/sync-inject-core.mjs",
+		"sync:inject-core:check": "node scripts/sync-inject-core.mjs --check",
 		"sync:publish": "node scripts/sync-publish.mjs",
 		"sync:publish:check": "node scripts/sync-publish.mjs --check"
 	},
