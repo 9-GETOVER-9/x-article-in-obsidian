@@ -404,9 +404,7 @@ function buildInjectCoreEvaluateFunction(markdown: string, imageMap: RunnerImage
 		const runnerSource = ${runnerSource};
 		const markdown = ${markdownSource};
 		const imageMap = ${imageMapSource};
-		if (!window.__xArticleInjectCore) {
-			(0, eval)(runnerSource);
-		}
+		(0, eval)(runnerSource);
 		const api = window.__xArticleInjectCore;
 		if (!api || typeof api.runMarkdown !== "function") {
 			throw new Error("inject-core runner did not install.");
