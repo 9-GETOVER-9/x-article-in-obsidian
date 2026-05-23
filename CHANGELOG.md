@@ -6,6 +6,17 @@
 
 ---
 
+## [1.0.19] - 2026-05-23
+
+### Added
+- 设置页新增 Node 可执行文件路径配置。PATH 缺失时，可粘贴 `where node`（Windows）或 `which node`（Mac/Linux）的完整输出路径。
+- 设置页新增「测试 Node 可用」按钮，会运行 `node --version` 并显示成功版本号或失败错误。
+
+### Fixed
+- 通过 Playwright MCP 上传草稿时，若配置了 Node 路径，会优先用该路径启动 MCP runtime，避免 Obsidian GUI 环境找不到 PATH 里的 `node` / `npx`。
+
+---
+
 ## [1.0.18] - 2026-05-23
 
 ### Fixed
