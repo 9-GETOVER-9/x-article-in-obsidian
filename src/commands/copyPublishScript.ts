@@ -91,21 +91,85 @@ async function buildPublishPayload(
 	rawMarkdown: string,
 ): Promise<PublishPayload> {
 	const markdown = buildPreviewMarkdown(file, rawMarkdown, plugin.settings);
-	const extraction = await extractPublishItems(plugin, file, markdown);
+	const frontmatterTitle = getArticleFrontmatterString(plugin, file, ["title", "Title"]);
+	const article = deriveArticleMarkdownMetadata(markdown, frontmatterTitle);
+	const extraction = await extractPublishItems(plugin, file, article.markdown);
 	const html = await renderMarkdownToHtml(plugin, file, extraction.processedMarkdown);
-	const title = getArticleFrontmatterString(plugin, file, ["title", "Title"]);
 	const coverTarget = getArticleFrontmatterString(plugin, file, ["cover", "Cover"]);
-	const cover = coverTarget
-		? await resolveImageAsset(plugin, file, normalizeFrontmatterImageTarget(coverTarget), "")
+	const finalCoverTarget = coverTarget
+		? normalizeFrontmatterImageTarget(coverTarget)
+		: article.coverTarget;
+	const cover = finalCoverTarget
+		? await resolveImageAsset(plugin, file, finalCoverTarget, "")
 		: null;
 	return {
 		html,
 		markdown: extraction.processedMarkdown,
 		items: extraction.items,
-		title,
+		title: article.title,
 		cover,
 		autoApplyCover: plugin.settings.autoApplyCover,
 	};
+}
+
+function deriveArticleMarkdownMetadata(
+	markdown: string,
+	frontmatterTitle: string | null,
+): { markdown: string; title: string | null; coverTarget: string | null } {
+	let output = markdown.replace(/\r\n/g, "\n");
+	let title = frontmatterTitle;
+	const coverTarget = extractFirstImageTarget(output);
+
+	if (!title) {
+		const promoted = promoteFirstH1ToTitle(output);
+		if (promoted) {
+			title = promoted.title;
+			output = downgradeBodyHeadings(promoted.markdown);
+		}
+	}
+
+	return { markdown: output, title, coverTarget };
+}
+
+function promoteFirstH1ToTitle(markdown: string): { markdown: string; title: string } | null {
+	const frontmatterMatch = markdown.match(/^---\n[\s\S]*?\n---\n*/);
+	const offset = frontmatterMatch ? frontmatterMatch[0].length : 0;
+	const body = markdown.slice(offset);
+	const match = body.match(/^(?:[ \t]*)#\s+(.+?)[ \t]*$/m);
+	if (!match || match.index === undefined) {
+		return null;
+	}
+
+	const title = (match[1] ?? "").trim();
+	if (!title) {
+		return null;
+	}
+
+	const start = offset + match.index;
+	const end = start + match[0].length;
+	const nextEnd = markdown[end] === "\n" ? end + 1 : end;
+	return {
+		title,
+		markdown: `${markdown.slice(0, start)}${markdown.slice(nextEnd)}`.trim(),
+	};
+}
+
+function downgradeBodyHeadings(markdown: string): string {
+	return markdown.replace(/^(#{2,6})([ \t]+.+)$/gm, (whole, marks: string, rest: string) => {
+		return `${marks.slice(1)}${rest}`;
+	});
+}
+
+function extractFirstImageTarget(markdown: string): string | null {
+	const mdImage = markdown.match(/!\[[^\]]*\]\(([^)]+)\)/);
+	if (mdImage?.[1]) {
+		return normalizeFrontmatterImageTarget(mdImage[1]);
+	}
+	const wikiImage = markdown.match(/!\[\[([^\]]+)\]\]/);
+	if (wikiImage?.[1]) {
+		return normalizeFrontmatterImageTarget(wikiImage[1]);
+	}
+	return null;
 }
 
 function createConcurrencyLimiter(limit: number): <T>(run: () => Promise<T>) => Promise<T> {

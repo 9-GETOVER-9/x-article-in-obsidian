@@ -102,7 +102,12 @@ export async function publishViaInjectCoreMcp(plugin: XArticleInObsidianPlugin):
 				runtimeSource: runtime.source,
 				result: publishResult,
 			});
-			new Notice(plugin.t("notice.publishSuccess", { source: runtime.source }));
+			const summaryText = formatInjectCoreSummary(publishResult);
+			new Notice(
+				summaryText
+					? `${plugin.t("notice.publishSuccess", { source: runtime.source })} · ${summaryText}`
+					: plugin.t("notice.publishSuccess", { source: runtime.source }),
+			);
 		} finally {
 			await client.close();
 		}
@@ -426,6 +431,18 @@ const CREATE_OR_FIND_EDITOR_FUNCTION = `async () => {
 		return document.querySelector("[data-contents='true'] [contenteditable='true']")
 			|| document.querySelector("[contenteditable='true']");
 	}
+	async function ensureArticleListPage() {
+		if (!/\\/compose\\/articles\\/edit\\//.test(location.pathname)) return;
+		const target = "/compose/articles";
+		history.pushState(null, "", target);
+		window.dispatchEvent(new PopStateEvent("popstate"));
+		for (let attempt = 0; attempt < 20; attempt += 1) {
+			if (!/\\/compose\\/articles\\/edit\\//.test(location.pathname)) return;
+			await sleep(150);
+		}
+		location.href = target;
+		await sleep(1200);
+	}
 	function findCreateButton() {
 		const ariaTerms = new Set([
 			"create","compose","write","draft","new article","撰写","新建","创建",
@@ -451,7 +468,7 @@ const CREATE_OR_FIND_EDITOR_FUNCTION = `async () => {
 		}
 		return null;
 	}
-	if (findEditor()) return true;
+	await ensureArticleListPage();
 	const button = findCreateButton();
 	if (!button) throw new Error("Create button not found.");
 	button.click();
@@ -469,6 +486,27 @@ function isOkResult(result: unknown): result is { ok: true } {
 			"ok" in result &&
 			(result as { ok?: unknown }).ok === true,
 	);
+}
+
+function formatInjectCoreSummary(result: unknown): string | null {
+	if (!result || typeof result !== "object") {
+		return null;
+	}
+	const summary = (result as { summary?: unknown }).summary;
+	if (!summary || typeof summary !== "object") {
+		return null;
+	}
+	const mainSummary = (summary as { mainSummary?: unknown }).mainSummary;
+	if (!mainSummary || typeof mainSummary !== "object") {
+		return null;
+	}
+	const main = mainSummary as Record<string, unknown>;
+	const atomicFail = Number(main.atomicFail ?? 0);
+	const imgFail = Number(main.imgFail ?? 0);
+	const markersCleaned = Number(main.markersCleaned ?? 0);
+	const atomicOk = Number(main.atomicOk ?? 0);
+	const imgOk = Number(main.imgOk ?? 0);
+	return `inject-core: atomicOk=${atomicOk}, atomicFail=${atomicFail}, imgOk=${imgOk}, imgFail=${imgFail}, markersCleaned=${markersCleaned}`;
 }
 
 function stringifyResult(result: unknown): string {
