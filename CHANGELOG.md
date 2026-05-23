@@ -6,6 +6,19 @@
 
 ---
 
+## [1.0.18] - 2026-05-23
+
+### Fixed
+- 发布 payload 的 API 路径现在与 inject-core 路径一致：没有 frontmatter title 时使用首个 H1 作为文章标题，并从正文删除；没有 frontmatter cover 时使用正文第一张图片作为封面。
+- 当首个 H1 被提升为文章标题后，正文剩余标题整体降一级（H2→H1、H3→H2 等），对齐 X 文章编辑器的标题/正文层级。
+- inject-core MCP 发布入口会强制打开新草稿，避免在已有 `/compose/articles/edit/...` 页面覆盖旧草稿。
+- 发布完成 Notice 现在显示 inject-core summary，包括 atomic/image 成功失败数与 marker 清理数，便于 partial success 排查。
+
+### Changed
+- vendored inject-core runner 更新到 `e093401ba6f6e047...`，同步 XMP / workspace 最新 Markdown 导入行为。
+
+---
+
 ## [1.0.17] - 2026-05-05
 
 ### Fixed
