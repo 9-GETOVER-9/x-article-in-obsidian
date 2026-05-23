@@ -58,6 +58,12 @@ export type TranslationKey =
 	| "settings.nodejs.name"
 	| "settings.nodejs.desc"
 	| "settings.nodejs.link"
+	| "settings.nodePath.name"
+	| "settings.nodePath.desc"
+	| "settings.nodePath.placeholder"
+	| "settings.nodePath.test"
+	| "settings.nodePath.testSuccess"
+	| "settings.nodePath.testFailed"
 	| "settings.autoApplyCover.name"
 	| "settings.autoApplyCover.desc"
 	| "settings.debugLog.name"
@@ -164,6 +170,13 @@ const translations: Translations = {
 		"settings.nodejs.name": "Node.js",
 		"settings.nodejs.desc": "Browser draft upload requires a local Node.js environment. Open the official download page here.",
 		"settings.nodejs.link": "Download Node.js",
+		"settings.nodePath.name": "Node executable path",
+		"settings.nodePath.desc":
+			"Optional. If Obsidian cannot find Node from PATH, paste the full path from `where node` on Windows or `which node` on macOS/Linux. Leave empty to use the existing PATH detection.",
+		"settings.nodePath.placeholder": "Windows: C:\\Program Files\\nodejs\\node.exe / macOS: /opt/homebrew/bin/node",
+		"settings.nodePath.test": "Test Node",
+		"settings.nodePath.testSuccess": "✓ Node is available: {version}",
+		"settings.nodePath.testFailed": "✕ Node test failed: {error}",
 		"settings.autoApplyCover.name": "Auto-apply cover",
 		"settings.autoApplyCover.desc":
 			"After the cover upload finishes, automatically click Apply in the X cover dialog.",
@@ -181,7 +194,7 @@ const translations: Translations = {
 		"notice.publishDesktopOnly": "Browser draft upload is available on desktop only.",
 		"notice.noBrowserBridge": "No browser bridge was detected. Configure Playwright MCP first.",
 		"notice.nodeRequiredForPublish":
-			"Browser draft upload requires a local Node.js environment. Install Node.js and make sure node, npm, and npx are available in PATH before uploading through browser.",
+			"Browser draft upload requires a local Node.js environment. Install Node.js and make sure node, npm, and npx are available in PATH, or set the Node executable path in plugin settings.",
 		"notice.publishSuccess": "Uploaded to X draft through Playwright MCP ({source}).",
 		"notice.publishFailed": "Draft upload through MCP failed.",
 		"notice.playwrightDisconnected":
@@ -269,6 +282,13 @@ const translations: Translations = {
 		"settings.nodejs.name": "Node.js",
 		"settings.nodejs.desc": "通过浏览器上传草稿需要本地 Node.js 环境。可在这里打开 Node.js 官网下载页。",
 		"settings.nodejs.link": "下载 Node.js",
+		"settings.nodePath.name": "Node 可执行文件路径",
+		"settings.nodePath.desc":
+			"可选。如果 Obsidian 里找不到 PATH 中的 Node，请在 Windows 命令行运行 `where node`，或在 Mac/Linux 运行 `which node`，把输出的完整路径粘到这里。留空则沿用当前 PATH 自动探测。",
+		"settings.nodePath.placeholder": "Windows: C:\\Program Files\\nodejs\\node.exe / macOS: /opt/homebrew/bin/node",
+		"settings.nodePath.test": "测试 Node 可用",
+		"settings.nodePath.testSuccess": "✓ Node 可用：{version}",
+		"settings.nodePath.testFailed": "✕ Node 测试失败：{error}",
 		"settings.autoApplyCover.name": "自动应用封面",
 		"settings.autoApplyCover.desc": "封面上传完成后，自动点击 X 封面弹窗里的“应用”按钮。",
 		"settings.debugLog.name": "开启调试日志",
@@ -285,7 +305,7 @@ const translations: Translations = {
 		"notice.publishDesktopOnly": "浏览器上传草稿功能仅支持桌面端。",
 		"notice.noBrowserBridge": "未检测到浏览器桥接，请先配置 Playwright MCP。",
 		"notice.nodeRequiredForPublish":
-			"通过浏览器上传草稿需要本地 Node.js 环境。请先安装 Node.js，并确保 node、npm、npx 可在 PATH 中使用，然后再上传到草稿箱。",
+			"通过浏览器上传草稿需要本地 Node.js 环境。请先安装 Node.js，并确保 node、npm、npx 可在 PATH 中使用；也可以在插件设置里填写 Node 可执行文件路径。",
 		"notice.publishSuccess": "已通过 Playwright MCP 上传到 X 草稿箱（{source}）。",
 		"notice.publishFailed": "通过 MCP 上传草稿失败。",
 		"notice.playwrightDisconnected":

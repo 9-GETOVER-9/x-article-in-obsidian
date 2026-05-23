@@ -96,7 +96,7 @@ export async function publishViaDetectedMcp(
 	}
 
 	try {
-		const nodeEnvironment = inspectLocalNodeEnvironment();
+		const nodeEnvironment = inspectLocalNodeEnvironment(plugin.settings.nodePath);
 		await appendPublishLog(plugin, "publish.preflight", {
 			sourceNotePath: sourceNote?.file.path ?? null,
 			nodeEnvironment,
@@ -307,7 +307,7 @@ async function detectPlaywrightRuntime(plugin: XArticleInObsidianPlugin): Promis
 		void plugin.saveSettings();
 	}
 
-	return (
+	const runtime =
 		findPlaywrightRuntime(parsedConfigs, extensionToken) ??
 		(extensionToken
 			? normalizeRuntimeConfig({
@@ -316,8 +316,8 @@ async function detectPlaywrightRuntime(plugin: XArticleInObsidianPlugin): Promis
 					env: { [PLAYWRIGHT_TOKEN_ENV]: extensionToken },
 					source: "auto-detected token",
 				})
-			: null)
-	);
+			: null);
+	return runtime ? applyConfiguredNodePath(runtime, plugin.settings.nodePath) : null;
 }
 
 function detectPlaywrightToken(
@@ -556,6 +556,86 @@ function normalizeRuntimeConfig(runtime: McpRuntimeConfig): McpRuntimeConfig {
 		...normalized,
 		args: ["-y", ...normalized.args],
 	};
+}
+
+function applyConfiguredNodePath(runtime: McpRuntimeConfig, configuredNodePath: string | undefined): McpRuntimeConfig {
+	const nodePath = configuredNodePath?.trim();
+	if (!nodePath) {
+		return runtime;
+	}
+
+	const req = getNodeRequire();
+	const path = req("node:path") as typeof import("node:path");
+	const fs = req("node:fs") as typeof import("node:fs");
+	const processRef = req("node:process") as typeof import("node:process");
+	const nodeDir = path.dirname(nodePath);
+	const commandName = path.basename(runtime.command).toLowerCase();
+	const isNpx = commandName === "npx" || commandName === "npx.cmd" || commandName === "npx.exe";
+	const isNode = commandName === "node" || commandName === "node.exe";
+	const envPath = processRef.env.PATH ?? processRef.env.Path ?? "";
+	const env = {
+		...runtime.env,
+		PATH: [nodeDir, envPath].filter((part) => part.length > 0).join(path.delimiter),
+	};
+
+	if (isNode) {
+		return {
+			...runtime,
+			command: nodePath,
+			env,
+			source: `${runtime.source} + configured nodePath`,
+		};
+	}
+
+	if (!isNpx) {
+		return {
+			...runtime,
+			env,
+			source: `${runtime.source} + configured nodePath PATH`,
+		};
+	}
+
+	const npxCli = findNpxCliForNode(nodePath, path, fs, processRef.platform);
+	if (npxCli) {
+		return {
+			...runtime,
+			command: nodePath,
+			args: [npxCli, ...runtime.args],
+			env,
+			source: `${runtime.source} + configured nodePath`,
+		};
+	}
+
+	return {
+		...runtime,
+		command: nodePath,
+		args: [
+			"-e",
+			"console.error('Configured nodePath works, but npm/npx CLI was not found next to it. Install Node.js with npm, or clear nodePath to use PATH detection.'); process.exit(127);",
+		],
+		env,
+		source: `${runtime.source} + configured nodePath (npx missing)`,
+	};
+}
+
+function findNpxCliForNode(
+	nodePath: string,
+	path: typeof import("node:path"),
+	fs: typeof import("node:fs"),
+	platform: NodeJS.Platform,
+): string | null {
+	const nodeDir = path.dirname(nodePath);
+	const candidates = [
+		path.join(nodeDir, "node_modules", "npm", "bin", "npx-cli.js"),
+		path.join(nodeDir, "..", "lib", "node_modules", "npm", "bin", "npx-cli.js"),
+		path.join(nodeDir, "..", "libexec", "lib", "node_modules", "npm", "bin", "npx-cli.js"),
+		path.join(nodeDir, "npx"),
+		path.join(nodeDir, "npx-cli.js"),
+	];
+	if (platform === "win32") {
+		candidates.push(path.join(nodeDir, "node_modules", "npm", "bin", "npx-cli.js"));
+	}
+	return candidates.map((candidate) => path.normalize(candidate)).find((candidate) => fs.existsSync(candidate)) ?? null;
 }
 
 function unwrapShellCommand(runtime: McpRuntimeConfig): McpRuntimeConfig {
@@ -849,7 +929,7 @@ function getExecutableSearchDirs(
 	return Array.from(dirs);
 }
 
-function inspectLocalNodeEnvironment(): {
+function inspectLocalNodeEnvironment(configuredNodePath?: string): {
 	available: boolean;
 	platform: string;
 	tools: Array<{ name: string; resolved: string | null; candidates: string[] }>;
@@ -863,6 +943,28 @@ function inspectLocalNodeEnvironment(): {
 		const os = req("node:os") as typeof import("node:os");
 		const fs = req("node:fs") as typeof import("node:fs");
 		const processRef = req("node:process") as typeof import("node:process");
+		const nodePath = configuredNodePath?.trim();
+		if (nodePath) {
+			const nodeResolved = fs.existsSync(nodePath) ? nodePath : null;
+			const npxCli = nodeResolved ? findNpxCliForNode(nodePath, path, fs, processRef.platform) : null;
+			return {
+				available: Boolean(nodeResolved),
+				platform: processRef.platform,
+				tools: [
+					{ name: "node", resolved: nodeResolved, candidates: [nodePath] },
+					{ name: "npx-cli", resolved: npxCli, candidates: npxCli ? [npxCli] : [] },
+				],
+				pathEntries: [path.dirname(nodePath)],
+				shellPathProbe: {
+					skipped: true,
+					shell: null,
+					method: null,
+					entries: [],
+					error: null,
+				},
+			};
+		}
+
 		const names = ["node", "npm", "npx"];
 		const pathEntries = getExecutableSearchDirs(path, os, fs, processRef);
 		const shellPathProbe = probeLoginShellPath(path, processRef);

@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { detectAndPersistPlaywrightToken } from "./commands/publishViaMcp";
 import { LocaleSetting } from "./i18n";
 import { openPublishLogFile } from "./logger";
@@ -13,6 +13,7 @@ export type PublishMode = "api" | "menu";
 export interface XArticlePreviewSettings {
 	locale: LocaleSetting;
 	playwrightToken: string;
+	nodePath: string;
 	enableDebugLog: boolean;
 	autoRefresh: boolean;
 	autoApplyCover: boolean;
@@ -27,6 +28,7 @@ export interface XArticlePreviewSettings {
 export const DEFAULT_SETTINGS: XArticlePreviewSettings = {
 	locale: "auto",
 	playwrightToken: "",
+	nodePath: "",
 	enableDebugLog: false,
 	autoRefresh: true,
 	autoApplyCover: true,
@@ -137,6 +139,24 @@ export class XArticleSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName(this.plugin.t("settings.nodePath.name"))
+			.setDesc(this.plugin.t("settings.nodePath.desc"))
+			.addText((text) =>
+				text
+					.setPlaceholder(this.plugin.t("settings.nodePath.placeholder"))
+					.setValue(this.plugin.settings.nodePath)
+					.onChange((value) => {
+						this.plugin.settings.nodePath = value.trim();
+						void this.plugin.saveSettings();
+					}),
+			)
+			.addButton((button) =>
+				button.setButtonText(this.plugin.t("settings.nodePath.test")).onClick(() => {
+					void testNodePath(this.plugin);
+				}),
+			);
+
+		new Setting(containerEl)
 			.setName(this.plugin.t("settings.publishMode.name"))
 			.setDesc(this.plugin.t("settings.publishMode.desc"))
 			.addDropdown((dropdown) =>
@@ -221,4 +241,46 @@ export class XArticleSettingTab extends PluginSettingTab {
 				}),
 			);
 	}
+}
+
+type NodeRequireLike = (id: string) => unknown;
+type RequireContainer = typeof globalThis & { require?: NodeRequireLike };
+type ChildStdoutChunk = string | Uint8Array;
+
+async function testNodePath(plugin: XArticleInObsidianPlugin): Promise<void> {
+	const binary = plugin.settings.nodePath.trim() || "node";
+	try {
+		const req = getNodeRequire();
+		const childProcess = req("node:child_process") as typeof import("node:child_process");
+		const bufferModule = req("node:buffer") as typeof import("node:buffer");
+		const proc = childProcess.spawn(binary, ["--version"], { stdio: "pipe" });
+		const stdout: string[] = [];
+		const stderr: string[] = [];
+		const stringify = (chunk: ChildStdoutChunk): string =>
+			typeof chunk === "string" ? chunk : bufferModule.Buffer.from(chunk).toString("utf8");
+		proc.stdout.on("data", (chunk: ChildStdoutChunk) => stdout.push(stringify(chunk)));
+		proc.stderr.on("data", (chunk: ChildStdoutChunk) => stderr.push(stringify(chunk)));
+		const result = await new Promise<{ code: number | null; signal: string | null; error?: Error }>((resolve) => {
+			proc.on("error", (error) => resolve({ code: null, signal: null, error }));
+			proc.on("close", (code, signal) => resolve({ code, signal }));
+		});
+		const output = stdout.join("").trim() || stderr.join("").trim();
+		if (result.code === 0) {
+			new Notice(plugin.t("settings.nodePath.testSuccess", { version: output || "node --version ok" }));
+			return;
+		}
+		const reason = result.error?.message ?? stderr.join("").trim() ?? `exit ${result.code ?? result.signal ?? "unknown"}`;
+		new Notice(plugin.t("settings.nodePath.testFailed", { error: reason }));
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		new Notice(plugin.t("settings.nodePath.testFailed", { error: message }));
+	}
+}
+
+function getNodeRequire(): NodeRequireLike {
+	const maybeRequire = (globalThis as RequireContainer).require;
+	if (typeof maybeRequire === "function") {
+		return maybeRequire;
+	}
+	throw new Error("Node require is not available in this environment.");
 }
