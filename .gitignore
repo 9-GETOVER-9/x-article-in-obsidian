@@ -27,6 +27,7 @@ data.json
 
 # Local logs, release output and credentials
 logs/
+.playwright-mcp/
 dist/
 coverage/
 .env
