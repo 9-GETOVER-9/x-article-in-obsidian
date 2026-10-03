@@ -2,6 +2,7 @@ import { MarkdownView, Notice, Platform, TFile, requestUrl } from "obsidian";
 import { appendPublishLog } from "../logger";
 import type XArticleInObsidianPlugin from "../main";
 import type { XArticlePreviewSettings } from "../settings";
+import { maskMarkdownCode } from "./copyPublishScript";
 import { INJECT_CORE_RUNNER_SHA256, INJECT_CORE_RUNNER_SOURCE } from "../vendor/x-article-inject-core/runner";
 import {
 	detectPlaywrightRuntime,
@@ -145,6 +146,9 @@ async function buildImageMap(
 		references.map((reference) =>
 			limit(async () => {
 				const asset = await resolveImageAsset(plugin, file, reference);
+				if (!asset.ok) {
+					throw new Error(`Unable to load image ${reference.normalized}: ${asset.error}`);
+				}
 				addImageMapEntry(map, reference.raw, asset);
 				addImageMapEntry(map, reference.normalized, asset);
 			}),
@@ -158,7 +162,8 @@ function collectImageReferences(markdown: string): ImageReference[] {
 	const seen = new Set<string>();
 	const add = (raw: string, alt: string): void => {
 		const normalized = normalizeImageTarget(raw);
-		if (!normalized) {
+		// The runner decodes data URI images itself; they are not vault files.
+		if (!normalized || /^data:/i.test(normalized)) {
 			return;
 		}
 		const key = `${raw}\n${normalized}`;
@@ -169,14 +174,16 @@ function collectImageReferences(markdown: string): ImageReference[] {
 		references.push({ raw, normalized, alt });
 	};
 
+	// Code examples contain literal image syntax, not required upload assets.
+	const body = maskMarkdownCode(stripFrontmatter(markdown));
 	let match: RegExpExecArray | null;
 	const markdownImagePattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
-	while ((match = markdownImagePattern.exec(markdown)) !== null) {
+	while ((match = markdownImagePattern.exec(body)) !== null) {
 		add(match[2] ?? "", match[1] ?? "");
 	}
 
 	const wikiImagePattern = /!\[\[([^\]]+)\]\]/g;
-	while ((match = wikiImagePattern.exec(markdown)) !== null) {
+	while ((match = wikiImagePattern.exec(body)) !== null) {
 		add(match[1] ?? "", "");
 	}
 
@@ -480,12 +487,15 @@ const CREATE_OR_FIND_EDITOR_FUNCTION = `async () => {
 }`;
 
 function isOkResult(result: unknown): result is { ok: true } {
-	return Boolean(
-		result &&
-			typeof result === "object" &&
-			"ok" in result &&
-			(result as { ok?: unknown }).ok === true,
-	);
+	if (!result || typeof result !== "object" || !("ok" in result) || result.ok !== true) {
+		return false;
+	}
+	const summary = (result as { summary?: unknown }).summary;
+	if (!summary || typeof summary !== "object") return true;
+	const mainSummary = (summary as { mainSummary?: unknown }).mainSummary;
+	if (!mainSummary || typeof mainSummary !== "object") return true;
+	const main = mainSummary as Record<string, unknown>;
+	return Number(main.imgFail ?? 0) === 0 && Number(main.atomicFail ?? 0) === 0;
 }
 
 function formatInjectCoreSummary(result: unknown): string | null {

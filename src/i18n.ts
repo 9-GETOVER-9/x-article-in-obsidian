@@ -82,6 +82,7 @@ export type TranslationKey =
 	| "notice.nodeRequiredForPublish"
 	| "notice.publishSuccess"
 	| "notice.publishFailed"
+	| "notice.publishInProgress"
 	| "notice.playwrightDisconnected"
 	| "notice.playwrightTokenDetected"
 	| "notice.playwrightTokenMissing"
@@ -197,6 +198,7 @@ const translations: Translations = {
 			"Browser draft upload requires a local Node.js environment. Install Node.js and make sure node, npm, and npx are available in PATH, or set the Node executable path in plugin settings.",
 		"notice.publishSuccess": "Uploaded to X draft through Playwright MCP ({source}).",
 		"notice.publishFailed": "Draft upload through MCP failed.",
+		"notice.publishInProgress": "An article upload is already in progress. Wait for it to finish before uploading again.",
 		"notice.playwrightDisconnected":
 			"Playwright MCP disconnected before initialization finished. Make sure Chrome or Edge is open and the bridge extension is connected.",
 		"notice.playwrightTokenDetected": "Detected and saved the Playwright token ({source}).",
@@ -308,6 +310,7 @@ const translations: Translations = {
 			"通过浏览器上传草稿需要本地 Node.js 环境。请先安装 Node.js，并确保 node、npm、npx 可在 PATH 中使用；也可以在插件设置里填写 Node 可执行文件路径。",
 		"notice.publishSuccess": "已通过 Playwright MCP 上传到 X 草稿箱（{source}）。",
 		"notice.publishFailed": "通过 MCP 上传草稿失败。",
+		"notice.publishInProgress": "已有文章正在上传，请等待完成后再上传。",
 		"notice.playwrightDisconnected":
 			"Playwright MCP 在初始化完成前断开连接。请确认 Chrome 或 Edge 已打开，且桥接扩展已连接。",
 		"notice.playwrightTokenDetected": "已检测并保存 Playwright token（{source}）。",

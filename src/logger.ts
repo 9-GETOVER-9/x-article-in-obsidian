@@ -101,7 +101,13 @@ function getNodeRequire(): NodeRequireLike {
 function safeStringify(value: unknown): string {
 	return JSON.stringify(
 		value,
-		(_, currentValue) => {
+		(key: string, currentValue: unknown): unknown => {
+			if (/token|password|secret|authorization|cookie|api[-_]?key|credential/i.test(key)) {
+				return "[REDACTED]";
+			}
+			if (key.toLowerCase() === "env" && currentValue && typeof currentValue === "object") {
+				return Object.keys(currentValue as Record<string, unknown>);
+			}
 			if (currentValue instanceof Error) {
 				return {
 					name: currentValue.name,

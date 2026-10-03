@@ -1,6 +1,6 @@
 {
 	"name": "x-article-in-obsidian",
-	"version": "1.0.19",
+	"version": "1.0.20",
 	"description": "Obsidian plugin for previewing the current Markdown note in an X Article-style sidebar.",
 	"main": "main.js",
 	"type": "module",
@@ -9,6 +9,7 @@
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
 		"lint": "eslint .",
+		"test": "node --test scripts/api-publish-regression.test.mjs scripts/publish-assets.test.mjs scripts/publish-logger.test.mjs scripts/publish-concurrency-regression.test.mjs scripts/inject-publish-regression.test.mjs",
 		"sync:inject-core": "node scripts/sync-inject-core.mjs",
 		"sync:inject-core:check": "node scripts/sync-inject-core.mjs --check",
 		"sync:publish": "node scripts/sync-publish.mjs",

@@ -6,6 +6,30 @@
 
 ---
 
+## 1.0.20 — 2026-10-03
+
+This is an independently maintained release by 9-GETOVER-9, based on Icy-Cat's MIT-licensed 1.0.19. The original plugin ID and author attribution are preserved.
+
+- Wait for X's editor and upload handler before uploading images.
+- Retry only before an image upload has been dispatched; stop on uncertain completion to prevent late images being assigned to the next image.
+- Reject failed title, cover, and content mutations instead of reporting success.
+- Map Markdown headings to the two heading levels supported by X Articles.
+- Stop on missing body images or an explicitly configured cover before creating a draft.
+- Treat Inject Core image and atomic-block failures as failed uploads.
+- Share one upload lock across commands, preview panels, and publishing modes.
+- Redact credentials and environment values in diagnostic logs.
+- Add automated regression tests and run them in build/release CI.
+
+Uploads create drafts. Review the saved draft before publishing on X. After an uncertain upload timeout, inspect the partial draft and start a fresh upload rather than continuing it.
+
+### Installation
+
+Download `main.js`, `manifest.json`, and `styles.css` from this repository's release. Back up those three existing plugin files, then replace them in `.obsidian/plugins/x-article-in-obsidian/`. Keep `data.json` to preserve your settings. Reload the plugin or restart Obsidian.
+
+This fork is distributed from its own GitHub releases. Obsidian's community update mechanism can install an upstream build over this fork; check the repository source before updating.
+
+---
+
 ## [1.0.19] - 2026-05-23
 
 ### Added

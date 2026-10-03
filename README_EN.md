@@ -1,11 +1,13 @@
 # 📰 X Article in Obsidian
 
-[![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7C3AED?style=flat-square)](#) [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square)](#) [![Version](https://img.shields.io/badge/version-1.0.8-111827?style=flat-square)](#) [![License](https://img.shields.io/badge/license-MIT-16A34A?style=flat-square)](#)
+> Independently maintained by **9-GETOVER-9**, based on [Icy-Cat’s original plugin](https://github.com/Icy-Cat/x-article-in-obsidian) 1.0.19, with the original attribution and MIT license preserved. Release **1.0.20** fixes lost content/images, false success reports, and concurrent uploads. See the [changelog](./CHANGELOG.md). Keep your `data.json` settings when replacing release files.
+
+[![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7C3AED?style=flat-square)](#) [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square)](#) [![Version](https://img.shields.io/badge/version-1.0.20-111827?style=flat-square)](#) [![License](https://img.shields.io/badge/license-MIT-16A34A?style=flat-square)](#)
 
 Render the current Markdown note into an X Article-style reading sidebar, so you can write and review the final reading feel at the same time.
 
-> The main development repository has moved to [x-article-workspace](https://github.com/Icy-Cat/x-article-workspace).
-> This repository remains focused on the Obsidian plugin release and docs, while shared logic, the VS Code host, and the Claude skill are now maintained in the workspace monorepo.
+> The original author’s main development repository has moved to [x-article-workspace](https://github.com/Icy-Cat/x-article-workspace).
+> The original plugin repository remains focused on the Obsidian plugin release and docs, while shared logic, the VS Code host, and the Claude skill are now maintained in the workspace monorepo.
 
 <p>
   <a href="./README.md">简体中文</a>
@@ -31,7 +33,7 @@ Render the current Markdown note into an X Article-style reading sidebar, so you
 
 ### Option 1: install from Release
 
-1. Open the [GitHub Releases page](https://github.com/Icy-Cat/x-article-in-obsidian/releases/latest)
+1. Open the [GitHub Releases page](https://github.com/9-GETOVER-9/x-article-in-obsidian/releases/latest)
 2. Download the latest release zip package and extract it. The extracted folder should contain `main.js`, `manifest.json`, and `styles.css`.
 3. In Obsidian, go to **Settings → Community plugins** and click the button that opens the plugins folder.
 4. Create a new folder named `x-article-in-obsidian`.
@@ -143,7 +145,7 @@ For day-to-day feature work, shared publishing logic, the VS Code host, and Clau
 
 The GitHub Actions flow here remains focused on building and releasing the Obsidian plugin.
 
-Latest release: <https://github.com/Icy-Cat/x-article-in-obsidian/releases/latest>
+Latest release: <https://github.com/9-GETOVER-9/x-article-in-obsidian/releases/latest>
 
 To publish a new version of the Obsidian plugin:
 

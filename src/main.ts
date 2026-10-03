@@ -1,4 +1,4 @@
-import { MarkdownView, Plugin, WorkspaceLeaf } from "obsidian";
+import { MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from "obsidian";
 import {
 	COPY_PUBLISH_SCRIPT_COMMAND_ID,
 	OPEN_GUIDE_COMMAND_ID,
@@ -23,8 +23,12 @@ type AppWithInternalSettings = typeof Plugin.prototype.app & {
 	};
 };
 
+type PublishMode = "api" | "menu" | "inject-core";
+type PublishContext = { file: TFile; content: string };
+
 export default class XArticleInObsidianPlugin extends Plugin {
 	settings: XArticlePreviewSettings;
+	private isPublishing = false;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -66,9 +70,7 @@ export default class XArticleInObsidianPlugin extends Plugin {
 			id: PUBLISH_VIA_MCP_COMMAND_ID,
 			name: this.t("command.publishViaMcp"),
 			callback: () => {
-				void import("./commands/publishViaMcp").then(({ publishViaDetectedMcp }) =>
-					publishViaDetectedMcp(this),
-				);
+				void this.publishWithMode("menu");
 			},
 		});
 
@@ -76,9 +78,7 @@ export default class XArticleInObsidianPlugin extends Plugin {
 			id: PUBLISH_VIA_API_MCP_COMMAND_ID,
 			name: this.t("command.publishViaApiMcp"),
 			callback: () => {
-				void import("./commands/publishViaApiMcp").then(({ publishViaApiMcp }) =>
-					publishViaApiMcp(this),
-				);
+				void this.publishWithMode("api");
 			},
 		});
 
@@ -86,9 +86,7 @@ export default class XArticleInObsidianPlugin extends Plugin {
 			id: PUBLISH_VIA_INJECT_CORE_MCP_COMMAND_ID,
 			name: this.t("command.publishViaInjectCoreMcp"),
 			callback: () => {
-				void import("./commands/publishViaInjectCoreMcp").then(({ publishViaInjectCoreMcp }) =>
-					publishViaInjectCoreMcp(this),
-				);
+				void this.publishWithMode("inject-core");
 			},
 		});
 
@@ -126,14 +124,34 @@ export default class XArticleInObsidianPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	async publishWithDefaultMode(): Promise<void> {
-		const mode = this.settings.publishMode ?? "api";
-		if (mode === "menu") {
-			const { publishViaDetectedMcp } = await import("./commands/publishViaMcp");
-			await publishViaDetectedMcp(this);
-		} else {
-			const { publishViaApiMcp } = await import("./commands/publishViaApiMcp");
-			await publishViaApiMcp(this);
+	async publishWithDefaultMode(context?: PublishContext): Promise<void> {
+		await this.publishWithMode(this.settings.publishMode ?? "api", context);
+	}
+
+	private async publishWithMode(mode: PublishMode, context?: PublishContext): Promise<void> {
+		// All command and preview entries share one lock because they operate
+		// on the same browser editor. Acquire it before loading a publisher.
+		if (this.isPublishing) {
+			new Notice(this.t("notice.publishInProgress"));
+			return;
+		}
+		this.isPublishing = true;
+		try {
+			if (mode === "menu") {
+				const { publishViaDetectedMcp } = await import("./commands/publishViaMcp");
+				await publishViaDetectedMcp(this, context);
+			} else if (mode === "inject-core") {
+				const { publishViaInjectCoreMcp } = await import("./commands/publishViaInjectCoreMcp");
+				await publishViaInjectCoreMcp(this);
+			} else {
+				const { publishViaApiMcp } = await import("./commands/publishViaApiMcp");
+				await publishViaApiMcp(this, context);
+			}
+		} catch (error) {
+			console.error("Failed to start X article upload", error);
+			new Notice(this.t("notice.publishFailed"));
+		} finally {
+			this.isPublishing = false;
 		}
 	}
 

@@ -247,7 +247,11 @@ function buildContentState(segments: Segment[], mediaInfoBySegmentIndex: Map<num
 		if (seg.type === "text") {
 			const block = {
 				key: genKey(),
-				type: seg.kind,
+				// X has two heading sizes; the article title is separate.
+				// Keep Markdown H2/H3 as the large/small body headings.
+				type: seg.kind === "header-one" || seg.kind === "header-two"
+					? "header-one"
+					: seg.kind.startsWith("header-") ? "header-two" : seg.kind,
 				text: seg.text,
 				data: {},
 				entity_ranges: [] as Array<{ key: number; offset: number; length: number }>,
@@ -269,7 +273,7 @@ function buildContentState(segments: Segment[], mediaInfoBySegmentIndex: Map<num
 			);
 		} else if (seg.type === "image") {
 			const info = mediaInfoBySegmentIndex.get(idx);
-			if (!info) return;
+			if (!info) throw new Error(`Image was not uploaded: ${seg.fileName}`);
 			blocks.push(
 				atomicBlock(
 					pushEntity({
@@ -385,12 +389,15 @@ async function stageBytes(bridge: Bridge, base64: string): Promise<void> {
 	);
 }
 
+class ImageUploadPreparationError extends Error {}
+
 async function uploadOneImage(bridge: Bridge, image: ImageSegment): Promise<MediaInfo> {
 	await stageBytes(bridge, image.base64);
 	const filenameJs = JSON.stringify(image.fileName || "image.png");
 	const mimeJs = JSON.stringify(image.mimeType || "image/png");
 
 	const callJs = `(async()=>{
+    let uploadStarted = false;
     try {
       const b64 = window.__imgB64 || '';
       const bin = atob(b64);
@@ -399,17 +406,28 @@ async function uploadOneImage(bridge: Bridge, image: ImageSegment): Promise<Medi
       const blob = new Blob([u], { type: ${mimeJs} });
       const file = new File([blob], ${filenameJs}, { type: ${mimeJs} });
       function getFiber(n){const k=Object.keys(n).find(x=>x.startsWith('__reactFiber$'));return k?n[k]:null}
-      const ed = document.querySelector("[data-contents='true']")?.closest("[contenteditable='true']")
-              || document.querySelector("[contenteditable='true']");
-      if (!ed) return {ok:false, step:'no editor'};
-      let f = getFiber(ed), depth = 0, onFilesAdded = null;
-      while (f && depth < 50) {
-        const props = f.memoizedProps || f.stateNode?.props;
-        if (props && typeof props.onFilesAdded === 'function') { onFilesAdded = props.onFilesAdded; break; }
-        f = f.return; depth++;
-      }
-      if (!onFilesAdded) return {ok:false, step:'no onFilesAdded'};
       function findDraft(node){let f=getFiber(node),d=0;while(f&&d<60){const sn=f.stateNode;if(sn?.props?.editorState)return sn;f=f.return;d++;}return null;}
+      // X can remount the editor after creating a draft. Wait for both
+      // its upload handler and Draft state, rather than an early DOM node.
+      let ed = null, onFilesAdded = null;
+      const readyDeadline = Date.now() + 30000;
+      while (Date.now() < readyDeadline) {
+        ed = document.querySelector("[data-contents='true']")?.closest("[contenteditable='true']")
+          || document.querySelector("[contenteditable='true']");
+        onFilesAdded = null;
+        let f = ed ? getFiber(ed) : null, depth = 0;
+        while (f && depth < 50) {
+          const props = f.memoizedProps || f.stateNode?.props;
+          if (props && typeof props.onFilesAdded === 'function') { onFilesAdded = props.onFilesAdded; break; }
+          f = f.return; depth++;
+        }
+        if (ed && onFilesAdded && findDraft(ed)?.props?.editorState?.getCurrentContent?.()) break;
+        await new Promise(r => setTimeout(r, 200));
+      }
+      if (!ed || !onFilesAdded || !findDraft(ed)?.props?.editorState?.getCurrentContent?.()) {
+        delete window.__imgB64;
+        return {ok:false, uploadStarted:false, step:'editor readiness timeout'};
+      }
       const editor = findDraft(ed);
       const csBefore = editor?.props?.editorState?.getCurrentContent?.();
       const before = new Set();
@@ -421,14 +439,22 @@ async function uploadOneImage(bridge: Bridge, image: ImageSegment): Promise<Medi
           });
         }
       });
+      uploadStarted = true;
       onFilesAdded([file]);
       delete window.__imgB64;
       return {ok:true, beforeKeys: Array.from(before)};
-    } catch (e) { return {ok:false, step:'exception', err: String(e?.message||e)}; }
+    } catch (e) {
+      delete window.__imgB64;
+      return {ok:false, uploadStarted, step:'exception', err: String(e?.message||e)};
+    }
   })()`;
 
-	const callRes = (await bridge.evalJS(callJs)) as { ok: boolean; beforeKeys?: string[]; step?: string };
-	if (!callRes?.ok) throw new Error(`onFilesAdded call failed: ${JSON.stringify(callRes)}`);
+	const callRes = (await bridge.evalJS(callJs)) as { ok: boolean; beforeKeys?: string[]; step?: string; uploadStarted?: boolean };
+	if (!callRes?.ok) {
+		const message = `onFilesAdded call failed: ${JSON.stringify(callRes)}`;
+		if (callRes?.uploadStarted === false) throw new ImageUploadPreparationError(message);
+		throw new Error(message);
+	}
 	const beforeKeys = callRes.beforeKeys ?? [];
 
 	let info: MediaInfo | null = null;
@@ -526,8 +552,11 @@ async function saveContent(
 	return (await bridge.evalJS(js)) as { status: number; err: string | null; hasData: boolean };
 }
 
-async function saveTitle(bridge: Bridge, articleId: string, title: string): Promise<void> {
-	if (!title) return;
+async function saveTitle(
+	bridge: Bridge,
+	articleId: string,
+	title: string,
+): Promise<{ status: number; err: string | null; hasData: boolean }> {
 	const body = {
 		variables: { articleEntityId: articleId, title },
 		features: FEATURES,
@@ -535,10 +564,11 @@ async function saveTitle(bridge: Bridge, articleId: string, title: string): Prom
 	};
 	const js = `(async()=>{
     const H=${AUTH_HEADERS_JS};
-    await fetch('https://x.com/i/api/graphql/${QUERY_IDS.UPDATE_TITLE}/ArticleEntityUpdateTitle',{method:'POST',credentials:'include',headers:{...H,'content-type':'application/json'},body:JSON.stringify(${JSON.stringify(body)})});
-    return 'ok';
+    const r=await fetch('https://x.com/i/api/graphql/${QUERY_IDS.UPDATE_TITLE}/ArticleEntityUpdateTitle',{method:'POST',credentials:'include',headers:{...H,'content-type':'application/json'},body:JSON.stringify(${JSON.stringify(body)})});
+    const t=await r.text();let j=null;try{j=JSON.parse(t)}catch{}
+    return JSON.stringify({status:r.status,err:j?.errors?.[0]?.message||null,hasData:!!j?.data?.articleentity_update_title});
   })()`;
-	await bridge.evalJS(js);
+	return (await bridge.evalJS(js)) as { status: number; err: string | null; hasData: boolean };
 }
 
 async function saveCoverMedia(
@@ -546,7 +576,7 @@ async function saveCoverMedia(
 	articleId: string,
 	mediaId: string,
 	mediaCategory = "DraftTweetImage",
-): Promise<{ status: number; err: string | null }> {
+): Promise<{ status: number; err: string | null; hasData: boolean }> {
 	const body = {
 		variables: {
 			articleEntityId: articleId,
@@ -559,9 +589,9 @@ async function saveCoverMedia(
     const H=${AUTH_HEADERS_JS};
     const r=await fetch('https://x.com/i/api/graphql/${QUERY_IDS.UPDATE_COVER}/ArticleEntityUpdateCoverMedia',{method:'POST',credentials:'include',headers:{...H,'content-type':'application/json'},body:JSON.stringify(${JSON.stringify(body)})});
     const t=await r.text();let j=null;try{j=JSON.parse(t)}catch{}
-    return JSON.stringify({status:r.status,err:j?.errors?.[0]?.message||null});
+    return JSON.stringify({status:r.status,err:j?.errors?.[0]?.message||null,hasData:!!j?.data?.articleentity_update_cover_media});
   })()`;
-	return (await bridge.evalJS(js)) as { status: number; err: string | null };
+	return (await bridge.evalJS(js)) as { status: number; err: string | null; hasData: boolean };
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -585,7 +615,7 @@ export async function publishViaApiMcp(
 			content = view?.editor.getValue() ?? content;
 		}
 		if (!file || content === null) {
-			new Notice("Open a markdown note first.");
+			new Notice(plugin.t("error.openMarkdownFirst"));
 			return;
 		}
 		await runApiPublish(plugin, file, content);
@@ -731,14 +761,19 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
 					break;
 				} catch (e) {
 					lastErr = e;
+					// A dispatched upload can finish after a timeout. Retrying it
+					// would leave a late duplicate MEDIA entity for the next image.
+					if (!(e instanceof ImageUploadPreparationError)) break;
 					if (attempt < 2) await new Promise<void>((r) => setTimeout(r, 2000));
 				}
 			}
 			if (lastErr) {
+				const message = normalizeMcpErrorMessage(lastErr, plugin);
 				await appendPublishLog(plugin, "publish.api.image_fail", {
 					index: imgIdx,
-					error: String((lastErr as Error).message || lastErr),
+					error: message,
 				});
+				throw new Error(`正文图片 ${imgIdx}（${seg.fileName}）上传失败：${message}`);
 			}
 		}
 
@@ -769,8 +804,12 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
 					coverInfo.mediaCategory || "DraftTweetImage",
 				);
 				await appendPublishLog(plugin, "publish.api.cover_save", { ...cr, mediaIdSuffix: coverInfo.mediaId.slice(-8) });
+				if (cr.status < 200 || cr.status >= 300 || cr.err || !cr.hasData) {
+					throw new Error(`封面保存失败：${cr.err || `HTTP ${cr.status}，没有返回保存结果`}`);
+				}
 			} catch (e) {
 				await appendPublishLog(plugin, "publish.api.cover_fail", { error: String((e as Error).message || e) });
+				throw e;
 			}
 		}
 
@@ -783,15 +822,23 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
 		if (payload.title) {
 			await setBanner(bridge, "📌  保存标题…", "work");
 			try {
-				await saveTitle(bridge, articleId, payload.title);
+				const tr = await saveTitle(bridge, articleId, payload.title);
+				await appendPublishLog(plugin, "publish.api.title_save", tr);
+				if (tr.status < 200 || tr.status >= 300 || tr.err || !tr.hasData) {
+					throw new Error(`标题保存失败：${tr.err || `HTTP ${tr.status}，没有返回保存结果`}`);
+				}
 			} catch (e) {
 				await appendPublishLog(plugin, "publish.api.title_fail", { error: String((e as Error).message || e) });
+				throw e;
 			}
 		}
 
 		await setBanner(bridge, "💾  保存正文内容…", "work");
 		const sr = await saveContent(bridge, articleId, contentState);
 		await appendPublishLog(plugin, "publish.api.save_done", sr);
+		if (sr.status < 200 || sr.status >= 300 || sr.err || !sr.hasData) {
+			throw new Error(`正文保存失败：${sr.err || `HTTP ${sr.status}，没有返回保存结果`}`);
+		}
 
 		// The editor's local Draft EditorState is still pre-publish — reload
 		// the page so the user sees the freshly-saved article without
@@ -805,6 +852,9 @@ async function runApiPublish(plugin: XArticleInObsidianPlugin, file: TFile, rawM
 		}
 
 		new Notice(plugin.t("notice.publishSuccess", { source: runtime.source }));
+	} catch (error) {
+		await setBanner(makeBridge(client), "❌ 上传未完成，请查看 Obsidian 错误提示后重试", "warn");
+		throw error;
 	} finally {
 		await client.close();
 	}

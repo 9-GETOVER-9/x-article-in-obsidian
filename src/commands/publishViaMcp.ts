@@ -39,7 +39,6 @@ const PLAYWRIGHT_EXTENSION_ID = "mmlmfjhmonkocbjadbfplnigmagldckm";
 const MCP_REQUEST_TIMEOUT_MS = 5_000;
 const MCP_EVALUATE_TIMEOUT_MS = 180_000;
 const REQUIRED_PLAYWRIGHT_TOOLS = ["browser_navigate", "browser_wait_for", "browser_evaluate"] as const;
-const OPTIONAL_PLAYWRIGHT_TOOLS = ["browser_press_key"] as const;
 
 // Independent Fiber-based marker cleanup. Runs after the publish function
 // regardless of whether it succeeded — DOM textContent mutations from the
@@ -120,7 +119,12 @@ export async function publishViaDetectedMcp(
 		}
 		await appendPublishLog(plugin, "publish.runtime_detected", {
 			sourceNotePath: sourceNote?.file.path ?? null,
-			runtime,
+			runtime: {
+				source: runtime.source,
+				command: runtime.command,
+				argumentCount: runtime.args.length,
+				environmentKeys: Object.keys(runtime.env),
+			},
 			functionSourceLength: functionSource.length,
 		});
 
@@ -240,7 +244,7 @@ export async function publishViaDetectedMcp(
 			});
 
 			if (publishErr && !isSuccessfulPublishResult(publishResult)) {
-				throw publishErr;
+				throw publishErr instanceof Error ? publishErr : new Error(normalizeMcpErrorMessage(publishErr, plugin));
 			}
 			if (!isSuccessfulPublishResult(publishResult)) {
 				throw new Error(
@@ -622,7 +626,7 @@ function findNpxCliForNode(
 	nodePath: string,
 	path: typeof import("node:path"),
 	fs: typeof import("node:fs"),
-	platform: NodeJS.Platform,
+	platform: typeof import("node:process").platform,
 ): string | null {
 	const nodeDir = path.dirname(nodePath);
 	const candidates = [

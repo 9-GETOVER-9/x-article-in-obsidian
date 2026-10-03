@@ -32,6 +32,11 @@ jobs:
       - name: Build plugin
         run: npm run build
 
+      - name: Test and lint
+        run: |
+          npm test
+          npm run lint
+
       - name: Read manifest metadata
         id: manifest
         run: |

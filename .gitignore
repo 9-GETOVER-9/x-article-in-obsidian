@@ -24,3 +24,10 @@ data.json
 # Temporary local clones
 .tmp_opencli_20260317/
 %TEMP%/
+
+# Local logs, release output and credentials
+logs/
+dist/
+coverage/
+.env
+.env.*

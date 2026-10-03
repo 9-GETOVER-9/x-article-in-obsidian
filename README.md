@@ -1,11 +1,13 @@
 # 📰 X Article in Obsidian
 
-[![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7C3AED?style=flat-square)](#) [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square)](#) [![Version](https://img.shields.io/badge/version-1.0.8-111827?style=flat-square)](#) [![License](https://img.shields.io/badge/license-MIT-16A34A?style=flat-square)](#)
+> 本仓库由 **9-GETOVER-9** 独立维护，基于 [Icy-Cat 原版](https://github.com/Icy-Cat/x-article-in-obsidian) 1.0.19，保留原作者署名与 MIT 许可。当前修复版 **1.0.20** 重点解决文字/图片丢失、错误报成功及重复上传。详见 [更新说明](./CHANGELOG.md)。安装时只替换三个发布文件，保留 `data.json` 设置。
+
+[![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7C3AED?style=flat-square)](#) [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square)](#) [![Version](https://img.shields.io/badge/version-1.0.20-111827?style=flat-square)](#) [![License](https://img.shields.io/badge/license-MIT-16A34A?style=flat-square)](#)
 
 把当前 Markdown 笔记实时渲染成接近 X Article 的阅读侧栏，让你一边写，一边看最终阅读效果。
 
-> 主开发仓库已经迁移到 [x-article-workspace](https://github.com/Icy-Cat/x-article-workspace)。
-> 这个仓库继续保留 Obsidian 插件视角的发布与文档；共享逻辑、VS Code 宿主和 Claude skill 现在统一在 workspace 中维护。
+> 原作者的主开发仓库已经迁移到 [x-article-workspace](https://github.com/Icy-Cat/x-article-workspace)。
+> 原作者插件仓库继续保留 Obsidian 插件视角的发布与文档；共享逻辑、VS Code 宿主和 Claude skill 现在统一在 workspace 中维护。
 
 <p>
   <a href="./README_EN.md">English</a>
@@ -29,7 +31,7 @@
 
 ### 方式一：从 Release 安装
 
-1. 打开 [GitHub Releases 页面](https://github.com/Icy-Cat/x-article-in-obsidian/releases/latest)
+1. 打开 [GitHub Releases 页面](https://github.com/9-GETOVER-9/x-article-in-obsidian/releases/latest)
 2. 下载最新发布版本中的压缩包并解压，解压后的文件夹中会有 `main.js`、`manifest.json`、`styles.css` 三个文件。
 3. 打开 Obsidian 设置 → 第三方插件 → 已安装插件右侧的打开插件文件夹按钮，在打开的文件夹中新建文件夹，命名为 `x-article-in-obsidian`
 4. 把文件复制新建的文件夹中
@@ -162,7 +164,7 @@ formatter:
 
 这里保留了 Obsidian 插件视角的 GitHub Actions 自动构建和发布流程。
 
-最新发布版本：<https://github.com/Icy-Cat/x-article-in-obsidian/releases/latest>
+最新发布版本：<https://github.com/9-GETOVER-9/x-article-in-obsidian/releases/latest>
 
 如果要发布这个 Obsidian 插件的新版本：
 

@@ -102,6 +102,9 @@ async function buildPublishPayload(
 	const cover = finalCoverTarget
 		? await resolveImageAsset(plugin, file, finalCoverTarget, "")
 		: null;
+	if (finalCoverTarget && !cover) {
+		throw new Error(`Unable to load cover image: ${finalCoverTarget}`);
+	}
 	return {
 		html,
 		markdown: extraction.processedMarkdown,
@@ -161,15 +164,77 @@ function downgradeBodyHeadings(markdown: string): string {
 }
 
 function extractFirstImageTarget(markdown: string): string | null {
-	const mdImage = markdown.match(/!\[[^\]]*\]\(([^)]+)\)/);
+	const searchable = maskMarkdownCode(markdown);
+	const mdImage = searchable.match(/!\[[^\]]*\]\(([^)]+)\)/);
 	if (mdImage?.[1]) {
 		return normalizeFrontmatterImageTarget(mdImage[1]);
 	}
-	const wikiImage = markdown.match(/!\[\[([^\]]+)\]\]/);
+	const wikiImage = searchable.match(/!\[\[([^\]]+)\]\]/);
 	if (wikiImage?.[1]) {
 		return normalizeFrontmatterImageTarget(wikiImage[1]);
 	}
 	return null;
+}
+
+type FencedCodeRange = { start: number; end: number; language: string; code: string };
+
+function getFencedCodeRanges(markdown: string): FencedCodeRange[] {
+	const lines = Array.from(markdown.matchAll(/[^\n]*(?:\n|$)/g));
+	const ranges: FencedCodeRange[] = [];
+	for (let index = 0; index < lines.length; index += 1) {
+		const line = lines[index];
+		if (!line) continue;
+		const opening = line[0].replace(/\r?\n$/, "").match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+		const fence = opening?.[1];
+		if (!fence || (fence[0] === "`" && opening?.[2]?.includes("`"))) continue;
+		const contentStart = line.index + line[0].length;
+		let contentEnd = markdown.length;
+		let end = markdown.length;
+		let closingIndex = lines.length;
+		for (let next = index + 1; next < lines.length; next += 1) {
+			const candidate = lines[next];
+			if (!candidate) continue;
+			const closing = candidate[0].replace(/\r?\n$/, "").match(/^ {0,3}(`+|~+)[ \t]*$/)?.[1];
+			if (closing && closing[0] === fence[0] && closing.length >= fence.length) {
+				contentEnd = candidate.index;
+				end = candidate.index + candidate[0].replace(/\r?\n$/, "").length;
+				closingIndex = next;
+				break;
+			}
+		}
+		ranges.push({ start: line.index, end, language: opening?.[2]?.trim() ?? "", code: markdown.slice(contentStart, contentEnd).replace(/\r?\n$/, "") });
+		index = closingIndex;
+	}
+	return ranges;
+}
+
+// Preserve offsets while hiding literal code from image/reference detection.
+export function maskMarkdownCode(markdown: string): string {
+	const chars = markdown.split("");
+	const mask = (start: number, end: number): void => {
+		for (let index = start; index < end; index += 1) {
+			if (chars[index] !== "\n" && chars[index] !== "\r") chars[index] = " ";
+		}
+	};
+	for (const range of getFencedCodeRanges(markdown)) mask(range.start, range.end);
+	const fencedMasked = chars.join("");
+	const ticks = Array.from(fencedMasked.matchAll(/`+/g));
+	for (let index = 0; index < ticks.length; index += 1) {
+		const opening = ticks[index];
+		if (!opening) continue;
+		let backslashes = 0;
+		for (let before = opening.index - 1; before >= 0 && fencedMasked[before] === "\\"; before -= 1) backslashes += 1;
+		if (backslashes % 2 !== 0) continue;
+		for (let next = index + 1; next < ticks.length; next += 1) {
+			const closing = ticks[next];
+			if (closing && closing[0].length === opening[0].length) {
+				mask(opening.index, closing.index + closing[0].length);
+				index = next;
+				break;
+			}
+		}
+	}
+	return chars.join("");
 }
 
 function createConcurrencyLimiter(limit: number): <T>(run: () => Promise<T>) => Promise<T> {
@@ -289,19 +354,9 @@ async function extractPublishItems(
 		url?: string;
 	}> = [];
 
-	const codePattern = /```([^\n`]*)\n([\s\S]*?)```/g;
 	let match: RegExpExecArray | null;
-	while ((match = codePattern.exec(markdown)) !== null) {
-		const wholeMatch = match[0];
-		const language = match[1] ?? "";
-		const code = match[2] ?? "";
-		segments.push({
-			type: "code",
-			start: match.index,
-			end: match.index + wholeMatch.length,
-			language: language.trim(),
-			code: code.replace(/\n$/, ""),
-		});
+	for (const range of getFencedCodeRanges(markdown)) {
+		segments.push({ type: "code", ...range });
 	}
 
 	const dividerPattern = /^(?: {0,3})(?:(?:-{3,})|(?:\*{3,})|(?:_{3,}))(?:[ \t]*)$/gm;
@@ -363,8 +418,9 @@ async function extractPublishItems(
 		{ kind: "wikilink", pattern: /!\[\[([^\]]+)\]\]/g },
 	];
 
+	const imageMarkdown = maskMarkdownCode(markdown);
 	for (const imagePattern of imagePatterns) {
-		while ((match = imagePattern.pattern.exec(markdown)) !== null) {
+		while ((match = imagePattern.pattern.exec(imageMarkdown)) !== null) {
 			const wholeMatch = match[0];
 			const firstGroup = match[1] ?? "";
 			const secondGroup = match[2] ?? "";
@@ -427,6 +483,9 @@ async function extractPublishItems(
 		}
 	}
 
+	// Observe every concurrent read before inspecting results, so an early
+	// failure cannot leave another image's rejected promise unhandled.
+	await Promise.all(imageTasks.values());
 	const items: PublishItem[] = [];
 	for (let index = 0; index < segments.length; index += 1) {
 		const segment = segments[index];
@@ -463,9 +522,10 @@ async function extractPublishItems(
 		}
 
 		const imageAsset = await imageTasks.get(marker);
-		if (imageAsset) {
-			items.push({ type: "image", marker, ...imageAsset });
+		if (!imageAsset) {
+			throw new Error(`Unable to load body image: ${segment.target ?? ""}`);
 		}
+		items.push({ type: "image", marker, ...imageAsset });
 	}
 
 	return { processedMarkdown, items };

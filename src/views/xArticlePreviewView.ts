@@ -209,6 +209,7 @@ export class XArticlePreviewView extends ItemView {
 
 	private async publish(): Promise<void> {
 		if (this.isPublishing) {
+			new Notice(this.plugin.t("notice.publishInProgress"));
 			return;
 		}
 
@@ -221,19 +222,8 @@ export class XArticlePreviewView extends ItemView {
 				new Notice(this.plugin.t("error.openMarkdownFirst"));
 				return;
 			}
-			// Use the user's configured default mode (api / menu). The two
-			// stand-alone command-palette commands still let them pick
-			// explicitly per-invocation. Pass `context` so api mode also
-			// works from the preview panel (where the active leaf is the
-			// preview view, not a MarkdownView).
-			const mode = this.plugin.settings.publishMode ?? "api";
-			if (mode === "menu") {
-				const { publishViaDetectedMcp } = await import("../commands/publishViaMcp");
-				await publishViaDetectedMcp(this.plugin, context);
-			} else {
-				const { publishViaApiMcp } = await import("../commands/publishViaApiMcp");
-				await publishViaApiMcp(this.plugin, context);
-			}
+			// Preserve this preview's note while sharing the command upload lock.
+			await this.plugin.publishWithDefaultMode(context);
 		} finally {
 			this.isPublishing = false;
 			this.syncActionButtons();
@@ -249,7 +239,7 @@ export class XArticlePreviewView extends ItemView {
 
 		let added = false;
 		try {
-			await this.app.fileManager.processFrontMatter(context.file, (frontmatter) => {
+			await this.app.fileManager.processFrontMatter(context.file, (frontmatter: Record<string, unknown>) => {
 				let formatter = frontmatter.formatter;
 				if (typeof formatter === "string" && formatter.trim().length === 0) {
 					formatter = undefined;
