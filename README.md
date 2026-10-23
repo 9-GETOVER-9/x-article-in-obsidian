@@ -1,8 +1,22 @@
-# 📰 X Article in Obsidian
+<div align="center">
+
+# X Article in Obsidian
+
+**在 Obsidian 写文章、预览排版，再把图文送入 X 草稿。**
+
+`Obsidian 插件` · `Markdown` · `图文上传` · `维护版`
+
+[![GitHub Stars](https://img.shields.io/github/stars/9-GETOVER-9/x-article-in-obsidian?style=for-the-badge&color=839778)](https://github.com/9-GETOVER-9/x-article-in-obsidian/stargazers)
+[![License: MIT](https://img.shields.io/badge/License-MIT-7A9270?style=for-the-badge)](LICENSE)
+
+[功能简介](#section-1) · [安装](#section-3)
+
+</div>
+
+---
 
 > 本仓库由 **9-GETOVER-9** 独立维护，基于 [Icy-Cat 原版](https://github.com/Icy-Cat/x-article-in-obsidian) 1.0.19，保留原作者署名与 MIT 许可。当前修复版 **1.0.20** 重点解决文字/图片丢失、错误报成功及重复上传。详见 [更新说明](./CHANGELOG.md)。安装时只替换三个发布文件，保留 `data.json` 设置。
 
-[![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7C3AED?style=flat-square)](#) [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square)](#) [![Version](https://img.shields.io/badge/version-1.0.20-111827?style=flat-square)](#) [![License](https://img.shields.io/badge/license-MIT-16A34A?style=flat-square)](#)
 
 把当前 Markdown 笔记实时渲染成接近 X Article 的阅读侧栏，让你一边写，一边看最终阅读效果。
 
@@ -13,6 +27,8 @@
   <a href="./README_EN.md">English</a>
 </p>
 
+<a id="section-1"></a>
+
 ## 功能简介
 
 - 📝 自动跟随当前正在编辑或查看的笔记
@@ -21,11 +37,15 @@
 - 📚 支持通过 frontmatter 设置标题与封面图
 - 🚀 支持通过 Playwright MCP 上传到 X Article 草稿箱，确认无误后再由你手动发布
 
+<a id="section-2"></a>
+
 ## 适合场景
 
 - 写 X 长文
 - 在 Obsidian 里完成写作和排版预览
 - 边改边看文章封面、标题、摘要和正文节奏
+
+<a id="section-3"></a>
 
 ## 安装
 
@@ -56,6 +76,8 @@ npm run build
 ```
 
 然后重载 Obsidian，并在 **设置 → 第三方插件** 中启用。
+
+<a id="section-4"></a>
 
 ## 如何使用
 
@@ -157,6 +179,8 @@ formatter:
 - `formatter.title` 和 `formatter.cover` 可通过预览窗口的 **添加 formatter** 按钮自动创建；插件只补缺失字段，不会覆盖你已经填写的内容
 - 为兼容旧笔记，顶层 `title` 和 `cover` 仍可继续使用
 
+<a id="section-5"></a>
+
 ## 发布开发
 
 这个仓库现在用于 Obsidian 插件版本的发布与分发。
@@ -183,6 +207,8 @@ git push --tags
 
 `versions.json` 会在执行 `npm version` 时自动同步更新。
 
+<a id="section-6"></a>
+
 ## 常用示例
 
 使用 frontmatter 控制标题和封面：
@@ -205,10 +231,14 @@ https://x.com/xxxxx/status/123123
 这段正文会继续按文章内容正常渲染。
 ```
 
+<a id="section-7"></a>
+
 ## 效果截图
 
 ![预览效果](./docs/screenshot-1.png)
 ![侧栏界面](./docs/screenshot-2.png)
+
+<a id="section-8"></a>
 
 ## 技术信息
 
@@ -217,6 +247,8 @@ https://x.com/xxxxx/status/123123
 - 构建工具：esbuild
 - 包管理器：npm
 - 协议：MIT
+
+<a id="section-9"></a>
 
 ## Star
 
